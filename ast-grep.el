@@ -152,7 +152,7 @@ the command being executed, working directory, and raw output."
 (defun ast-grep-search (pattern &optional directory)
   "Search for ast-grep PATTERN in DIRECTORY.
 
-PATTERN is an ast-grep pattern string (e.g., \='$A && $A()\=').
+PATTERN is an ast-grep pattern string (e.g., `$A && $A()').
 DIRECTORY defaults to current directory if not specified.
 
 Interactively, prompts for pattern and uses current directory.
@@ -160,9 +160,9 @@ Results are displayed in a `completing-read' interface.
 Selecting a result jumps to the match location.
 
 Example patterns:
-  \='console.log($A)\='     - Find console.log calls
-  \='$A && $A()\='         - Find conditional function calls
-  \='function $NAME() {}\=' - Find function declarations"
+  `console.log($A)'     - Find console.log calls
+  `$A && $A()'          - Find conditional function calls
+  `function $NAME() {}' - Find function declarations"
   (interactive (list (read-string "ast-grep pattern: " nil 'ast-grep-history)))
   (unless (ast-grep--executable-available-p)
     (error "The ast-grep executable not found. Please install ast-grep"))
@@ -181,7 +181,7 @@ Example patterns:
 (defun ast-grep-project (pattern)
   "Search for ast-grep PATTERN in current project.
 
-PATTERN is an ast-grep pattern string (e.g., \='$A && $A()\=').
+PATTERN is an ast-grep pattern string (e.g., `$A && $A()').
 
 Searches recursively from the project root directory.
 Requires being in a project (detected via project.el).
@@ -197,7 +197,7 @@ This is equivalent to `ast-grep-search' with project root as directory."
 (defun ast-grep-directory (pattern directory)
   "Search for ast-grep PATTERN in specified DIRECTORY.
 
-PATTERN is an ast-grep pattern string (e.g., \='$A && $A()\=').
+PATTERN is an ast-grep pattern string (e.g., `$A && $A()').
 DIRECTORY is the target directory path (supports ~ expansion).
 
 Interactively, prompts for both pattern and directory.
