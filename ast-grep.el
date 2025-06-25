@@ -35,12 +35,19 @@
 ;; - Project-wide search
 ;; - Integration with completing-read (Vertico, etc.)
 ;; - Streaming JSON parsing for efficient processing
+;; - Async search with live results (when consult is available)
 
 ;;; Code:
 
 ;; Declare external functions to avoid byte-compiler warnings
 (declare-function project-current "project")
 (declare-function project-root "project")
+(declare-function consult--async-pipeline "consult")
+(declare-function consult--async-process "consult")
+(declare-function consult--async-transform "consult")
+(declare-function consult--async-throttle "consult")
+(declare-function consult--read "consult")
+(declare-function consult--lookup-member "consult")
 
 (defgroup ast-grep nil
   "Search code using ast-grep."
@@ -163,6 +170,43 @@ the command being executed, working directory, and raw output."
     (let ((lines (split-string output "\n" t)))
       (delq nil (mapcar #'ast-grep--parse-stream-line lines)))))
 
+;;; Async functions (require consult)
+
+(defun ast-grep--async-source (pattern directory)
+  "Create async source for PATTERN in DIRECTORY using consult."
+  (let ((cmd (ast-grep--build-command pattern directory)))
+    (consult--async-pipeline
+     (consult--async-throttle)
+     (consult--async-process
+      (lambda (_input)
+        cmd))
+     (consult--async-transform
+      (lambda (items)
+        (delq nil (mapcar #'ast-grep--parse-stream-line items)))))))
+
+(defun ast-grep--search-async (pattern directory)
+  "Search asynchronously using consult for PATTERN in DIRECTORY."
+  (let ((source (ast-grep--async-source pattern directory)))
+    (consult--read
+     source
+     :prompt (format "ast-grep [%s]: " pattern)
+     :lookup #'consult--lookup-member
+     :category 'ast-grep
+     :history 'ast-grep-history
+     :require-match t)))
+
+(defun ast-grep--search-sync (pattern directory)
+  "Search synchronously using `completing-read' for PATTERN in DIRECTORY."
+  (let* ((output (ast-grep--run-command pattern directory))
+         (candidates (ast-grep--parse-stream-output output)))
+    (if candidates
+        (completing-read
+         (format "ast-grep [%s]: " pattern)
+         candidates nil t nil 'ast-grep-history)
+      (progn
+        (message "No matches found for pattern: %s" pattern)
+        nil))))
+
 ;;; Interactive commands
 
 ;;;###autoload
@@ -173,7 +217,8 @@ PATTERN is an ast-grep pattern string (e.g., \\='$A && $A()\\=').
 DIRECTORY defaults to current directory if not specified.
 
 Interactively, prompts for pattern and uses current directory.
-Results are displayed in a `completing-read' interface.
+Uses async search with `consult' if available.
+Otherwise sync with `completing-read'.
 Selecting a result jumps to the match location.
 
 Example patterns:
@@ -184,16 +229,12 @@ Example patterns:
   (unless (ast-grep--executable-available-p)
     (error "The ast-grep executable not found. Please install ast-grep"))
   
-  (let* ((search-dir (or directory default-directory))
-         (output (ast-grep--run-command pattern search-dir))
-         (candidates (ast-grep--parse-stream-output output)))
-    (if candidates
-        (let ((selection (completing-read
-                          (format "ast-grep [%s]: " pattern)
-                          candidates nil t nil 'ast-grep-history)))
-          (when selection
-            (ast-grep--goto-match selection)))
-      (message "No matches found for pattern: %s" pattern))))
+  (let ((search-dir (or directory default-directory)))
+    (when-let ((selection
+                (if (featurep 'consult)
+                    (ast-grep--search-async pattern search-dir)
+                  (ast-grep--search-sync pattern search-dir))))
+      (ast-grep--goto-match selection))))
 
 ;;;###autoload
 (defun ast-grep-project (pattern)
@@ -203,7 +244,8 @@ PATTERN is an ast-grep pattern string (e.g., \\='$A && $A()\\=').
 
 Searches recursively from the project root directory.
 Requires being in a project (detected via project.el).
-Results are displayed in a `completing-read' interface.
+Uses async search with `consult' if available.
+Otherwise sync with `completing-read'.
 
 This is equivalent to `ast-grep-search' with project root as directory."
   (interactive (list (read-string "ast-grep pattern (project): " nil 'ast-grep-history)))
@@ -220,7 +262,8 @@ DIRECTORY is the target directory path (supports ~ expansion).
 
 Interactively, prompts for both pattern and directory.
 Searches recursively from the specified directory.
-Results are displayed in a `completing-read' interface."
+Uses async search with `consult' if available.
+Otherwise sync with `completing-read'."
   (interactive (list (read-string "ast-grep pattern: " nil 'ast-grep-history)
                      (read-directory-name "Directory: ")))
   (ast-grep-search pattern directory))
