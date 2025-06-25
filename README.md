@@ -8,7 +8,7 @@ An Emacs interface to [ast-grep](https://github.com/ast-grep/ast-grep), a CLI to
 - Project-wide search support
 - Integration with completing-read frameworks (Vertico, etc.)
 - Streaming JSON parsing for efficient processing
-
+- Async search with live results when consult is available
 
 ## Requirements
 
