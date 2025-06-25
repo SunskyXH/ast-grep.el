@@ -34,7 +34,7 @@
 ;; - Search code using ast-grep patterns
 ;; - Project-wide search
 ;; - Integration with completing-read (Vertico, etc.)
-;; - TODO: Asynchronous search for large codebases
+;; - Streaming JSON parsing for efficient processing
 
 ;;; Code:
 
@@ -52,10 +52,6 @@
   :type 'string
   :group 'ast-grep)
 
-(defcustom ast-grep-arguments '("--json")
-  "Default arguments passed to ast-grep."
-  :type '(repeat string)
-  :group 'ast-grep)
 
 (defcustom ast-grep-debug nil
   "Enable debug output for ast-grep commands.
@@ -89,14 +85,13 @@ the command being executed, working directory, and raw output."
   (let ((cmd (list ast-grep-executable "run"))
         (args '()))
     (push (format "--pattern=%s" pattern) args)
-    (when (member "--json" ast-grep-arguments)
-      (push "--json" args))
+    (push "--json=stream" args)
     (when directory
       ;; Expand ~ and environment variables in directory path
       (push (expand-file-name directory) args))
     (append cmd (reverse args))))
 
-;;; Core functions
+;;; Core functions (kept for testing and internal use)
 
 (defun ast-grep--run-command (pattern &optional directory)
   "Run ast-grep command with PATTERN in DIRECTORY."
@@ -146,6 +141,28 @@ the command being executed, working directory, and raw output."
        (message "ast-grep error: %s" (error-message-string err))
        nil))))
 
+;;; Streaming functions
+
+(defun ast-grep--parse-stream-line (line)
+  "Parse a single JSON LINE from streaming output."
+  (when (and line (not (string-empty-p line)))
+    (condition-case nil
+        (let* ((result (json-parse-string line :object-type 'plist))
+               (file (plist-get result :file))
+               (range (plist-get result :range))
+               (start (plist-get range :start))
+               (line-num (plist-get start :line))
+               (column (plist-get start :column))
+               (text (plist-get result :text)))
+          (format "%s:%d:%d:%s" file (1+ line-num) column (string-trim text)))
+      (error nil))))
+
+(defun ast-grep--parse-stream-output (output)
+  "Parse streaming JSON OUTPUT into a list of candidates."
+  (when (and output (not (string-empty-p output)))
+    (let ((lines (split-string output "\n" t)))
+      (delq nil (mapcar #'ast-grep--parse-stream-line lines)))))
+
 ;;; Interactive commands
 
 ;;;###autoload
@@ -168,7 +185,8 @@ Example patterns:
     (error "The ast-grep executable not found. Please install ast-grep"))
   
   (let* ((search-dir (or directory default-directory))
-         (candidates (ast-grep--candidates pattern search-dir)))
+         (output (ast-grep--run-command pattern search-dir))
+         (candidates (ast-grep--parse-stream-output output)))
     (if candidates
         (let ((selection (completing-read
                           (format "ast-grep [%s]: " pattern)
