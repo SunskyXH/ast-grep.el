@@ -22,12 +22,11 @@
 
 (ert-deftest ast-grep-test-build-command ()
   "Test command building."
-  (let ((ast-grep-executable "ast-grep")
-        (ast-grep-arguments '("--json")))
+  (let ((ast-grep-executable "ast-grep"))
     (should (equal (ast-grep--build-command "pattern")
-                   '("ast-grep" "run" "--pattern=pattern" "--json")))
+                   '("ast-grep" "run" "--pattern=pattern" "--json=stream")))
     (should (equal (ast-grep--build-command "pattern" "/path")
-                   '("ast-grep" "run" "--pattern=pattern" "--json" "/path")))))
+                   '("ast-grep" "run" "--pattern=pattern" "--json=stream" "/path")))))
 
 (ert-deftest ast-grep-test-parse-json-output ()
   "Test JSON output parsing."
