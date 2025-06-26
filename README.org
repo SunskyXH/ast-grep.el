@@ -15,6 +15,35 @@ An Emacs interface to [[https://github.com/ast-grep/ast-grep][ast-grep]], a CLI 
 - Emacs 28.1 or later
 - [[https://github.com/ast-grep/ast-grep][ast-grep]] CLI tool installed and available in PATH
 
+** Installation
+
+*** Doom Emacs
+
+Add to your ~packages.el~:
+
+#+begin_src emacs-lisp
+(package! ast-grep :recipe (:host github :repo "SunskyXH/ast-grep.el"))
+#+end_src
+
+*** Straight.el
+
+#+begin_src emacs-lisp
+(straight-use-package '(ast-grep :type git :host github :repo "SunskyXH/ast-grep.el"))
+#+end_src
+
+*** Manual Installation
+
+1. Clone the repository:
+   #+begin_src bash
+   git clone https://github.com/SunskyXH/ast-grep.el.git
+   #+end_src
+
+2. Add to your Emacs configuration:
+   #+begin_src emacs-lisp
+   (add-to-list 'load-path "/path/to/ast-grep.el")
+   (require 'ast-grep)
+   #+end_src
+
 ** Usage
 
 *** Interactive Commands
