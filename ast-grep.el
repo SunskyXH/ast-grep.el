@@ -3,7 +3,7 @@
 ;; Copyright (C) 2025 SunskyXH
 
 ;; Author: SunskyxXH <sunskyxh@gmail.com>
-;; Version: 0.1.0
+;; Version: 0.1.1
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: tools, matching
 ;; URL: https://github.com/sunskyxh/ast-grep.el
@@ -231,7 +231,7 @@ Example patterns:
   
   (let ((search-dir (or directory default-directory)))
     (when-let ((selection
-                (if (featurep 'consult)
+                (if (require 'consult nil t)
                     (ast-grep--search-async pattern search-dir)
                   (ast-grep--search-sync pattern search-dir))))
       (ast-grep--goto-match selection))))
