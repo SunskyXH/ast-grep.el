@@ -3,7 +3,7 @@
 ;; Copyright (C) 2025 SunskyXH
 
 ;; Author: SunskyxXH <sunskyxh@gmail.com>
-;; Version: 0.1.1
+;; Version: 0.1.2
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: tools, matching
 ;; URL: https://github.com/sunskyxh/ast-grep.el
@@ -65,6 +65,11 @@
 When non-nil, ast-grep will output debug information including
 the command being executed, working directory, and raw output."
   :type 'boolean
+  :group 'ast-grep)
+
+(defcustom ast-grep-async-min-input 3
+  "Minimum input length before triggering async search."
+  :type 'integer
   :group 'ast-grep)
 
 ;;; Internal variables
@@ -172,28 +177,29 @@ the command being executed, working directory, and raw output."
 
 ;;; Async functions (require consult)
 
-(defun ast-grep--async-source (pattern directory)
-  "Create async source for PATTERN in DIRECTORY using consult."
-  (let ((cmd (ast-grep--build-command pattern directory)))
-    (consult--async-pipeline
-     (consult--async-throttle)
-     (consult--async-process
-      (lambda (_input)
-        cmd))
-     (consult--async-transform
-      (lambda (items)
-        (delq nil (mapcar #'ast-grep--parse-stream-line items)))))))
+(defun ast-grep--async-source (directory)
+  "Create async source for DIRECTORY using consult."
+  (consult--async-pipeline
+   (consult--async-throttle)
+   (consult--async-process
+    (lambda (input)
+      (when (and input (>= (length input) ast-grep-async-min-input))
+        (ast-grep--build-command input directory))))
+   (consult--async-transform
+    (lambda (items)
+      (delq nil (mapcar #'ast-grep--parse-stream-line items))))))
 
 (defun ast-grep--search-async (pattern directory)
   "Search asynchronously using consult for PATTERN in DIRECTORY."
-  (let ((source (ast-grep--async-source pattern directory)))
+  (let ((source (ast-grep--async-source directory)))
     (consult--read
      source
      :prompt (format "ast-grep [%s]: " pattern)
      :lookup #'consult--lookup-member
      :category 'ast-grep
      :history 'ast-grep-history
-     :require-match t)))
+     :require-match t
+     :initial (format "#%s#" pattern))))
 
 (defun ast-grep--search-sync (pattern directory)
   "Search synchronously using `completing-read' for PATTERN in DIRECTORY."
