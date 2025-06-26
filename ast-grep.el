@@ -48,7 +48,6 @@
 (declare-function consult--async-throttle "consult")
 (declare-function consult--read "consult")
 (declare-function consult--lookup-member "consult")
-(declare-function consult--jump-state "consult")
 (declare-function consult--file-preview "consult")
 
 (defgroup ast-grep nil
