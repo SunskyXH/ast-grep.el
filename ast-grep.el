@@ -48,6 +48,8 @@
 (declare-function consult--async-throttle "consult")
 (declare-function consult--read "consult")
 (declare-function consult--lookup-member "consult")
+(declare-function consult--jump-state "consult")
+(declare-function consult--file-preview "consult")
 
 (defgroup ast-grep nil
   "Search code using ast-grep."
@@ -177,6 +179,32 @@ the command being executed, working directory, and raw output."
 
 ;;; Async functions (require consult)
 
+(defun ast-grep--state ()
+  "State function for ast-grep consult integration."
+  (let ((preview (consult--file-preview)))
+    (lambda (action cand)
+      (when cand
+        (if (string-match "^\\([^:]+\\):\\([0-9]+\\):\\([0-9]+\\):" cand)
+            (let ((file (match-string 1 cand))
+                  (line (string-to-number (match-string 2 cand)))
+                  (column (string-to-number (match-string 3 cand))))
+              (pcase action
+                ('preview
+                 (when-let ((buffer (funcall preview action file)))
+                   (with-current-buffer buffer
+                     (goto-char (point-min))
+                     (forward-line (1- line))
+                     (move-to-column column)
+                     (pulse-momentary-highlight-one-line (point))
+                     (point))))
+                ('return
+                 (find-file file)
+                 (goto-char (point-min))
+                 (forward-line (1- line))
+                 (move-to-column column))
+                (_ (funcall preview action file))))
+          (funcall preview action cand))))))
+
 (defun ast-grep--async-source (directory)
   "Create async source for DIRECTORY using consult."
   (consult--async-pipeline
@@ -196,6 +224,7 @@ the command being executed, working directory, and raw output."
      source
      :prompt (format "ast-grep [%s]: " pattern)
      :lookup #'consult--lookup-member
+     :state (ast-grep--state)
      :category 'ast-grep
      :history 'ast-grep-history
      :require-match t
