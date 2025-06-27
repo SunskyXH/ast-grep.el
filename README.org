@@ -34,15 +34,15 @@ Add to your ~packages.el~:
 *** Manual Installation
 
 1. Clone the repository:
-   #+begin_src bash
-   git clone https://github.com/SunskyXH/ast-grep.el.git
-   #+end_src
+#+begin_src bash
+git clone https://github.com/SunskyXH/ast-grep.el.git
+#+end_src
 
 2. Add to your Emacs configuration:
-   #+begin_src emacs-lisp
-   (add-to-list 'load-path "/path/to/ast-grep.el")
-   (require 'ast-grep)
-   #+end_src
+#+begin_src emacs-lisp
+(add-to-list 'load-path "/path/to/ast-grep.el")
+(require 'ast-grep)
+#+end_src
 
 ** Usage
 
@@ -62,3 +62,4 @@ Customize the following variables:
 
 - ~ast-grep-executable~ - Path to ast-grep executable (default: "ast-grep")
 - ~ast-grep-debug~ - Enable debug output for troubleshooting (default: nil)
+- ~ast-grep-async-min-input~ - Minimum input length before triggering async search (default: 3)
