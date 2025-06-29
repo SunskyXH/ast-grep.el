@@ -1,4 +1,7 @@
-* ast-grep.el
+#+TITLE: ast-grep.el
+#+AUTHOR: SunskyXH
+
+#+html: <a href="https://www.gnu.org/software/emacs/"><img alt="GNU Emacs" src="https://img.shields.io/badge/Emacs-28.1--30.1-%237F5AB6?logo=gnu-emacs&logoColor=white"/></a>
 
 An Emacs interface to [[https://github.com/ast-grep/ast-grep][ast-grep]], a CLI tool for code structural search, lint and rewriting based on Abstract Syntax Tree patterns.
 
