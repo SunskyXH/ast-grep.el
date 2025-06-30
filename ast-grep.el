@@ -115,7 +115,7 @@ the command being executed, working directory, and raw output."
         (command (ast-grep--build-command pattern directory)))
     ;; Debug output
     (when ast-grep-debug
-      (message "Debug: Running command: %s" (mapconcat 'shell-quote-argument command " "))
+      (message "Debug: Running command: %s" (mapconcat #'shell-quote-argument command " "))
       (message "Debug: Working directory: %s" default-directory))
     (with-temp-buffer
       (let ((exit-code (apply #'call-process
