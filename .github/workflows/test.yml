@@ -23,11 +23,12 @@ jobs:
       with:
         version: ${{ matrix.emacs-version }}
     
+    - name: Install Nix
+      uses: cachix/install-nix-action@v27
+    
     - name: Install ast-grep
       run: |
-        curl -L https://github.com/ast-grep/ast-grep/releases/latest/download/ast-grep-x86_64-unknown-linux-gnu.zip -o ast-grep.zip
-        unzip ast-grep.zip
-        sudo mv ast-grep /usr/local/bin/
+        nix profile install nixpkgs#ast-grep
         ast-grep --version
     
     - name: Run tests
