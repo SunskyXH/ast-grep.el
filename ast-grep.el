@@ -39,9 +39,9 @@
 
 ;;; Code:
 
+(require 'project)
+
 ;; Declare external functions to avoid byte-compiler warnings
-(declare-function project-current "project")
-(declare-function project-root "project")
 (declare-function consult--async-pipeline "consult")
 (declare-function consult--async-process "consult")
 (declare-function consult--async-transform "consult")
@@ -89,9 +89,8 @@ the command being executed, working directory, and raw output."
 
 (defun ast-grep--project-root ()
   "Get the current project root directory."
-  (when (require 'project nil t)
-    (when-let ((project (project-current)))
-      (project-root project))))
+  (when-let ((project (project-current)))
+    (project-root project)))
 
 (defun ast-grep--build-command (pattern &optional directory)
   "Build ast-grep command with PATTERN and DIRECTORY."
