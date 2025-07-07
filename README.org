@@ -2,6 +2,8 @@
 #+AUTHOR: SunskyXH
 
 #+html: <a href="https://www.gnu.org/software/emacs/"><img alt="GNU Emacs" src="https://img.shields.io/badge/Emacs-28.1--30.1-%237F5AB6?logo=gnu-emacs&logoColor=white"/></a>
+#+html: <a href="https://melpa.org/#/ast-grep"><img alt="MELPA" src="https://melpa.org/packages/ast-grep-badge.svg"/></a>
+#+html: <a href="https://stable.melpa.org/#/ast-grep"><img alt="MELPA Stable" src="https://stable.melpa.org/packages/ast-grep-badge.svg"/></a>
 
 An Emacs interface to [[https://github.com/ast-grep/ast-grep][ast-grep]], a CLI tool for code structural search, lint and rewriting based on Abstract Syntax Tree patterns.
 
@@ -21,12 +23,20 @@ An Emacs interface to [[https://github.com/ast-grep/ast-grep][ast-grep]], a CLI 
 
 ** Installation
 
+~ast-grep~ is available on [[https://melpa.org/#/ast-grep][MELPA]]. Install it using ~M-x package-install~ command or your preferred package manager:
+
+*** use-package
+
+#+begin_src emacs-lisp
+(use-package ast-grep :ensure t)
+#+end_src
+
 *** Doom Emacs
 
 Add to your ~packages.el~:
 
 #+begin_src emacs-lisp
-(package! ast-grep :recipe (:host github :repo "SunskyXH/ast-grep.el"))
+(package! ast-grep)
 #+end_src
 
 *** Straight.el
