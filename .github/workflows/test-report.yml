@@ -1,0 +1,39 @@
+name: Test Report
+
+on:
+  workflow_run:
+    workflows: ["Test"]
+    types:
+      - completed
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion != 'cancelled' }}
+    
+    steps:
+      - name: Create test summary
+        run: |
+          echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ github.event.workflow_run.conclusion }}" == "success" ]]; then
+            echo "✅ All tests passed!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The following test suites were executed:" >> $GITHUB_STEP_SUMMARY
+            echo "- Unit tests" >> $GITHUB_STEP_SUMMARY
+            echo "- Integration tests" >> $GITHUB_STEP_SUMMARY
+            echo "- Interactive workflow tests" >> $GITHUB_STEP_SUMMARY
+            echo "- Emacs daemon mode test" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Some tests failed." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the workflow logs for details." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Matrix" >> $GITHUB_STEP_SUMMARY
+          echo "Tests were run on:" >> $GITHUB_STEP_SUMMARY
+          echo "- Emacs 28.2" >> $GITHUB_STEP_SUMMARY
+          echo "- Emacs 29.4" >> $GITHUB_STEP_SUMMARY
+          echo "- Emacs 30.1" >> $GITHUB_STEP_SUMMARY
