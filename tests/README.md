@@ -4,6 +4,11 @@ This directory contains the test suite for ast-grep.el.
 
 ## Test Structure
 
+### Test Helper (`test-helper.el`)
+Shared helper functions and macros used across test suites to reduce code duplication.
+
+- `ast-grep-with-executable-check` macro for tests requiring ast-grep
+
 ### Unit Tests (`ast-grep-test.el`)
 Basic unit tests that test individual functions in isolation, using mocks where necessary. These tests do not require `ast-grep` to be installed.
 

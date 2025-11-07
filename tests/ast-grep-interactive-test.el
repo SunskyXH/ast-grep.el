@@ -12,6 +12,10 @@
 (require 'ert)
 (require 'ast-grep)
 
+;; Load shared test helpers
+(let ((test-dir (file-name-directory (or load-file-name buffer-file-name))))
+  (load (expand-file-name "test-helper" test-dir)))
+
 ;;; Test helpers
 
 (defvar ast-grep-interactive-test-dir
@@ -22,23 +26,17 @@
   (expand-file-name "fixtures" ast-grep-interactive-test-dir)
   "Directory containing test fixtures.")
 
-(defmacro ast-grep-with-executable-check (&rest body)
-  "Execute BODY if ast-grep is available, otherwise skip test."
-  `(progn
-     (skip-unless (executable-find "ast-grep"))
-     ,@body))
-
 ;;; Interactive workflow tests
 
 (ert-deftest ast-grep-interactive-test-goto-match ()
   "Test navigation to search result."
   :expected-result (if (executable-find "ast-grep") :passed :failed)
-  (skip-unless (executable-find "ast-grep"))
-  (let* ((default-directory ast-grep-interactive-fixtures-dir)
-         (sample-file (expand-file-name "sample.js" ast-grep-interactive-fixtures-dir))
-         (results (ast-grep--candidates "console.log($_)")))
-    (skip-unless results)
-    (let ((first-result (car results)))
+  (ast-grep-with-executable-check
+   (let* ((default-directory ast-grep-interactive-fixtures-dir)
+          (sample-file (expand-file-name "sample.js" ast-grep-interactive-fixtures-dir))
+          (results (ast-grep--candidates "console.log($_)")))
+     (skip-unless results)
+     (let ((first-result (car results)))
       ;; Parse the result
       (should (string-match "^\\([^:]+\\):\\([0-9]+\\):\\([0-9]+\\):" first-result))
       (let ((file (match-string 1 first-result))

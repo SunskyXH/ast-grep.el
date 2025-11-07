@@ -12,6 +12,10 @@
 (require 'ert)
 (require 'ast-grep)
 
+;; Load shared test helpers
+(let ((test-dir (file-name-directory (or load-file-name buffer-file-name))))
+  (load (expand-file-name "test-helper" test-dir)))
+
 ;;; Test helpers
 
 (defvar ast-grep-integration-test-dir
@@ -21,12 +25,6 @@
 (defvar ast-grep-integration-fixtures-dir
   (expand-file-name "fixtures" ast-grep-integration-test-dir)
   "Directory containing test fixtures.")
-
-(defmacro ast-grep-with-executable-check (&rest body)
-  "Execute BODY if ast-grep is available, otherwise skip test."
-  `(progn
-     (skip-unless (executable-find "ast-grep"))
-     ,@body))
 
 ;;; Integration tests
 

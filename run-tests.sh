@@ -69,7 +69,7 @@ run_test_suite() {
     if [ "$VERBOSE" = "1" ]; then
         "$EMACS" -batch -L . -l ast-grep.el -l "$test_file" -f ert-run-tests-batch-and-exit
     else
-        "$EMACS" -batch -L . -l ast-grep.el -l "$test_file" -f ert-run-tests-batch-and-exit 2>&1
+        "$EMACS" -batch -L . -l ast-grep.el -l "$test_file" -f ert-run-tests-batch-and-exit 2>&1 | grep -v "^Loading"
     fi
     
     if [ $? -eq 0 ]; then
