@@ -32,6 +32,22 @@ jobs:
           nix profile install nixpkgs#ast-grep
           ast-grep --version
 
-      - name: Run tests
+      - name: Run all tests
+        run: ./run-tests.sh all
+
+      - name: Test with Emacs daemon (simulates user interaction)
         run: |
-          emacs -batch -L . -l ast-grep.el -l tests/ast-grep-test.el -f ert-run-tests-batch-and-exit
+          # Start Emacs daemon to simulate user-like environment
+          emacs --daemon
+          
+          # Load package and run tests through emacsclient
+          emacsclient -e "(progn \
+            (add-to-list 'load-path \"$(pwd)\") \
+            (require 'ast-grep) \
+            (message \"ast-grep loaded successfully in daemon mode\"))" || true
+          
+          # Test that the package can be loaded in daemon mode
+          emacsclient -e "(featurep 'ast-grep)" | grep -q "t" && echo "✓ Package loads in daemon mode"
+          
+          # Stop daemon
+          emacsclient -e "(kill-emacs)"

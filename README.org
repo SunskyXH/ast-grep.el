@@ -75,3 +75,24 @@ Customize the following variables:
 - ~ast-grep-executable~ - Path to ast-grep executable (default: "ast-grep")
 - ~ast-grep-debug~ - Enable debug output for troubleshooting (default: nil)
 - ~ast-grep-async-min-input~ - Minimum input length before triggering async search (default: 3)
+
+** Development
+
+*** Running Tests
+
+The package includes comprehensive tests:
+- Unit tests (no dependencies)
+- Integration tests (requires ast-grep)
+- Interactive workflow tests (requires ast-grep)
+
+#+begin_src bash
+# Run all tests
+./run-tests.sh all
+
+# Run specific test suites
+./run-tests.sh unit
+./run-tests.sh integration
+./run-tests.sh interactive
+#+end_src
+
+See ~tests/README.md~ for more details.
