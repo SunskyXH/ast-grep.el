@@ -15,6 +15,18 @@ EMACS="${EMACS:-emacs}"
 VERBOSE="${VERBOSE:-0}"
 TEST_TYPE="${1:-all}"
 
+# Validate test type
+case "$TEST_TYPE" in
+    unit|integration|interactive|all)
+        # Valid test type
+        ;;
+    *)
+        echo -e "${RED}Error: Unknown test type: $TEST_TYPE${NC}"
+        echo "Usage: $0 [unit|integration|interactive|all]"
+        exit 1
+        ;;
+esac
+
 echo "========================================"
 echo "ast-grep.el Test Runner"
 echo "========================================"
@@ -99,11 +111,6 @@ case "$TEST_TYPE" in
         else
             echo -e "${YELLOW}Skipping integration and interactive tests (ast-grep not found)${NC}"
         fi
-        ;;
-    *)
-        echo -e "${RED}Error: Unknown test type: $TEST_TYPE${NC}"
-        echo "Usage: $0 [unit|integration|interactive|all]"
-        exit 1
         ;;
 esac
 

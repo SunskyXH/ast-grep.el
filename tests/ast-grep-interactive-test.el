@@ -22,6 +22,12 @@
   (expand-file-name "fixtures" ast-grep-interactive-test-dir)
   "Directory containing test fixtures.")
 
+(defmacro ast-grep-with-executable-check (&rest body)
+  "Execute BODY if ast-grep is available, otherwise skip test."
+  `(progn
+     (skip-unless (executable-find "ast-grep"))
+     ,@body))
+
 ;;; Interactive workflow tests
 
 (ert-deftest ast-grep-interactive-test-goto-match ()

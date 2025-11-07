@@ -22,6 +22,12 @@
   (expand-file-name "fixtures" ast-grep-integration-test-dir)
   "Directory containing test fixtures.")
 
+(defmacro ast-grep-with-executable-check (&rest body)
+  "Execute BODY if ast-grep is available, otherwise skip test."
+  `(progn
+     (skip-unless (executable-find "ast-grep"))
+     ,@body))
+
 ;;; Integration tests
 
 (ert-deftest ast-grep-integration-test-executable-check ()
@@ -33,13 +39,13 @@
 (ert-deftest ast-grep-integration-test-search-console-log ()
   "Integration test: Search for console.log in fixtures."
   :expected-result (if (executable-find "ast-grep") :passed :failed)
-  (skip-unless (executable-find "ast-grep"))
-  (let* ((default-directory ast-grep-integration-fixtures-dir)
-         (results (ast-grep--candidates "console.log($_)")))
-    (should results)
-    (should (> (length results) 0))
-    ;; Should find console.log in sample.js
-    (should (seq-some (lambda (r) (string-match-p "sample\\.js" r)) results))))
+  (ast-grep-with-executable-check
+   (let* ((default-directory ast-grep-integration-fixtures-dir)
+          (results (ast-grep--candidates "console.log($_)")))
+     (should results)
+     (should (> (length results) 0))
+     ;; Should find console.log in sample.js
+     (should (seq-some (lambda (r) (string-match-p "sample\\.js" r)) results)))))
 
 (ert-deftest ast-grep-integration-test-search-function-def ()
   "Integration test: Search for function definitions in fixtures."
@@ -100,7 +106,11 @@
 
 (ert-deftest ast-grep-integration-test-stream-parsing ()
   "Integration test: Verify streaming JSON output parsing."
-  (let ((stream-line "{\"file\":\"test.js\",\"range\":{\"start\":{\"line\":5,\"column\":2}},\"text\":\"console.log('test')\"}"))
+  (let ((stream-line (concat "{"
+                             "\"file\":\"test.js\","
+                             "\"range\":{\"start\":{\"line\":5,\"column\":2}},"
+                             "\"text\":\"console.log('test')\""
+                             "}")))
     (let ((result (ast-grep--parse-stream-line stream-line)))
       (should result)
       (should (string-match "^test\\.js:6:2:" result)))))

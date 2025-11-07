@@ -40,14 +40,26 @@ jobs:
           # Start Emacs daemon to simulate user-like environment
           emacs --daemon
           
-          # Load package and run tests through emacsclient
-          emacsclient -e "(progn \
+          # Load package and test through emacsclient
+          if emacsclient -e "(progn \
             (add-to-list 'load-path \"$(pwd)\") \
             (require 'ast-grep) \
-            (message \"ast-grep loaded successfully in daemon mode\"))" || true
+            (message \"ast-grep loaded successfully in daemon mode\"))"; then
+            echo "✓ Package loaded successfully in daemon mode"
+          else
+            echo "✗ Failed to load package in daemon mode"
+            emacsclient -e "(kill-emacs)"
+            exit 1
+          fi
           
-          # Test that the package can be loaded in daemon mode
-          emacsclient -e "(featurep 'ast-grep)" | grep -q "t" && echo "✓ Package loads in daemon mode"
+          # Test that the package feature is available
+          if emacsclient -e "(featurep 'ast-grep)" | grep -q "t"; then
+            echo "✓ Package feature available in daemon mode"
+          else
+            echo "✗ Package feature not available in daemon mode"
+            emacsclient -e "(kill-emacs)"
+            exit 1
+          fi
           
           # Stop daemon
           emacsclient -e "(kill-emacs)"
