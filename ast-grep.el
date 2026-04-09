@@ -103,6 +103,17 @@ the command being executed, working directory, and raw output."
       (push (expand-file-name directory) args))
     (append cmd (reverse args))))
 
+(defun ast-grep--build-rewrite-command (pattern replacement &optional directory)
+  "Build ast-grep rewrite command with PATTERN, REPLACEMENT and DIRECTORY."
+  (let ((cmd (list ast-grep-executable "run"))
+        (args '()))
+    (push (format "--pattern=%s" pattern) args)
+    (push (format "--rewrite=%s" replacement) args)
+    (push "--update-all" args)
+    (when directory
+      (push (expand-file-name directory) args))
+    (append cmd (reverse args))))
+
 ;;; Core functions (kept for testing and internal use)
 
 (defun ast-grep--run-command (pattern &optional directory)
@@ -127,6 +138,30 @@ the command being executed, working directory, and raw output."
           (if (zerop exit-code)
               output
             (error "The ast-grep failed with exit code %d: %s"
+                   exit-code output)))))))
+
+(defun ast-grep--run-rewrite-command (pattern replacement &optional directory)
+  "Run ast-grep rewrite with PATTERN and REPLACEMENT in DIRECTORY.
+Returns the command output string."
+  (unless (ast-grep--executable-available-p)
+    (error "The ast-grep executable not found. Please install ast-grep"))
+  (let ((default-directory (or directory default-directory))
+        (command (ast-grep--build-rewrite-command pattern replacement directory)))
+    (when ast-grep-debug
+      (message "Debug: Running rewrite command: %s"
+               (mapconcat #'shell-quote-argument command " "))
+      (message "Debug: Working directory: %s" default-directory))
+    (with-temp-buffer
+      (let ((exit-code (apply #'call-process
+                              (car command) nil t nil
+                              (cdr command))))
+        (let ((output (buffer-string)))
+          (when ast-grep-debug
+            (message "Debug: Rewrite output: %s" output)
+            (message "Debug: Exit code: %d" exit-code))
+          (if (zerop exit-code)
+              output
+            (error "The ast-grep rewrite failed with exit code %d: %s"
                    exit-code output)))))))
 
 (defun ast-grep--parse-json-output (output)
@@ -301,7 +336,64 @@ Otherwise sync with `completing-read'."
                      (read-directory-name "Directory: ")))
   (ast-grep-search pattern directory))
 
+;;;###autoload
+(defun ast-grep-rewrite (pattern replacement &optional directory)
+  "Rewrite code matching ast-grep PATTERN with REPLACEMENT in DIRECTORY.
+
+PATTERN is an ast-grep pattern string.
+REPLACEMENT is the replacement string (can use meta-variables from PATTERN).
+DIRECTORY defaults to current directory if not specified.
+
+First searches for matches to show the user what will change,
+then applies the rewrite after confirmation.
+
+Example:
+  Pattern:     \\='console.log($A)\\='
+  Replacement: \\='logger.info($A)\\='"
+  (interactive (list (read-string "ast-grep pattern: " nil 'ast-grep-history)
+                     (read-string "Replacement: ")
+                     nil))
+  (unless (ast-grep--executable-available-p)
+    (error "The ast-grep executable not found. Please install ast-grep"))
+  (let* ((search-dir (or directory default-directory))
+         (candidates (ast-grep--candidates pattern search-dir))
+         (count (length candidates)))
+    (if (zerop count)
+        (message "No matches found for pattern: %s" pattern)
+      (when (yes-or-no-p (format "Rewrite %d match%s? " count (if (= count 1) "" "es")))
+        (ast-grep--run-rewrite-command pattern replacement search-dir)
+        (ast-grep--revert-modified-buffers search-dir)
+        (message "Rewrote %d match%s." count (if (= count 1) "" "es"))))))
+
+;;;###autoload
+(defun ast-grep-rewrite-project (pattern replacement)
+  "Rewrite code matching ast-grep PATTERN with REPLACEMENT in current project."
+  (interactive (list (read-string "ast-grep pattern (project): " nil 'ast-grep-history)
+                     (read-string "Replacement: ")))
+  (if-let ((project-root (ast-grep--project-root)))
+      (ast-grep-rewrite pattern replacement project-root)
+    (error "Not in a project")))
+
+;;;###autoload
+(defun ast-grep-rewrite-directory (pattern replacement directory)
+  "Rewrite code matching ast-grep PATTERN with REPLACEMENT in DIRECTORY."
+  (interactive (list (read-string "ast-grep pattern: " nil 'ast-grep-history)
+                     (read-string "Replacement: ")
+                     (read-directory-name "Directory: ")))
+  (ast-grep-rewrite pattern replacement directory))
+
 ;;; Helper functions
+
+(defun ast-grep--revert-modified-buffers (directory)
+  "Revert buffers visiting files under DIRECTORY that have changed on disk."
+  (let ((dir (expand-file-name directory)))
+    (dolist (buf (buffer-list))
+      (when-let ((file (buffer-file-name buf)))
+        (when (and (string-prefix-p dir file)
+                   (not (buffer-modified-p buf))
+                   (not (verify-visited-file-modtime buf)))
+          (with-current-buffer buf
+            (revert-buffer t t t)))))))
 
 (defun ast-grep--goto-match (match)
   "Go to the location specified by MATCH string.

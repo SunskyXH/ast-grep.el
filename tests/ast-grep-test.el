@@ -69,6 +69,28 @@
     (let ((candidates (ast-grep--candidates "pattern")))
       (should-not candidates))))
 
+(ert-deftest ast-grep-test-build-rewrite-command ()
+  "Test rewrite command building."
+  (let ((ast-grep-executable "ast-grep"))
+    (should (equal (ast-grep--build-rewrite-command "pattern" "replacement")
+                   '("ast-grep" "run" "--pattern=pattern" "--rewrite=replacement" "--update-all")))
+    (should (equal (ast-grep--build-rewrite-command "pattern" "replacement" "/path")
+                   '("ast-grep" "run" "--pattern=pattern" "--rewrite=replacement" "--update-all" "/path")))))
+
+(ert-deftest ast-grep-test-rewrite-no-matches ()
+  "Test rewrite with no matches does nothing."
+  (cl-letf (((symbol-function 'ast-grep--executable-available-p)
+             (lambda () t))
+            ((symbol-function 'ast-grep--candidates)
+             (lambda (&rest _args) nil)))
+    ;; Should not error, just message
+    (ast-grep-rewrite "nonexistent" "replacement" default-directory)))
+
+(ert-deftest ast-grep-test-revert-modified-buffers ()
+  "Test that revert function doesn't error on empty buffer list."
+  ;; Should not error when called with a directory
+  (ast-grep--revert-modified-buffers temporary-file-directory))
+
 (provide 'test-ast-grep)
 
 ;;; ast-grep-test.el ends here
