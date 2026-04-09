@@ -73,6 +73,25 @@ the command being executed, working directory, and raw output."
   :type 'integer
   :group 'ast-grep)
 
+(defcustom ast-grep-search-backend 'auto
+  "Backend for ast-grep search.
+`auto' uses consult async when available and ivy-mode is not active,
+falling back to sync completing-read otherwise.
+`consult' forces consult async search.
+`sync' forces synchronous completing-read search."
+  :type '(choice (const :tag "Auto-detect" auto)
+                 (const :tag "Consult async" consult)
+                 (const :tag "Sync completing-read" sync))
+  :group 'ast-grep)
+
+(defun ast-grep--use-consult-p ()
+  "Return non-nil if consult async search should be used."
+  (pcase ast-grep-search-backend
+    ('consult (require 'consult nil t))
+    ('sync nil)
+    ('auto (and (require 'consult nil t)
+                (not (bound-and-true-p ivy-mode))))))
+
 ;;; Internal variables
 
 (defvar ast-grep-history nil
@@ -264,7 +283,7 @@ Example patterns:
   
   (let ((search-dir (or directory default-directory)))
     (when-let ((selection
-                (if (require 'consult nil t)
+                (if (ast-grep--use-consult-p)
                     (ast-grep--search-async pattern search-dir)
                   (ast-grep--search-sync pattern search-dir))))
       (ast-grep--goto-match selection))))

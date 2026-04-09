@@ -69,6 +69,26 @@
     (let ((candidates (ast-grep--candidates "pattern")))
       (should-not candidates))))
 
+;;; Backend detection tests
+
+(ert-deftest ast-grep-test-use-consult-p-sync-backend ()
+  "Test that sync backend always returns nil."
+  (let ((ast-grep-search-backend 'sync))
+    (should-not (ast-grep--use-consult-p))))
+
+(ert-deftest ast-grep-test-use-consult-p-auto-with-ivy ()
+  "Test that auto backend returns nil when ivy-mode is active."
+  (let ((ast-grep-search-backend 'auto)
+        (ivy-mode t))
+    (should-not (ast-grep--use-consult-p))))
+
+(ert-deftest ast-grep-test-use-consult-p-auto-without-consult ()
+  "Test that auto backend returns nil when consult is unavailable."
+  (let ((ast-grep-search-backend 'auto))
+    ;; consult is not available in test environment
+    ;; so (require 'consult nil t) returns nil
+    (should-not (ast-grep--use-consult-p))))
+
 (provide 'test-ast-grep)
 
 ;;; ast-grep-test.el ends here
