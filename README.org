@@ -7,6 +7,8 @@
 
 An Emacs interface to [[https://github.com/ast-grep/ast-grep][ast-grep]], a CLI tool for code structural search, lint and rewriting based on Abstract Syntax Tree patterns.
 
+[[file:assets/demo.gif]]
+
 ** Features
 
 
