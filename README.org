@@ -20,6 +20,7 @@ An Emacs interface to [[https://github.com/ast-grep/ast-grep][ast-grep]], a CLI 
 
 - Emacs 28.1 or later
 - [[https://github.com/ast-grep/ast-grep][ast-grep]] CLI tool installed and available in PATH
+- Optional: [[https://github.com/minad/consult][consult]] for live async search results
 
 ** Installation
 

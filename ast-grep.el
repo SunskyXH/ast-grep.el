@@ -3,7 +3,7 @@
 ;; Copyright (C) 2025 SunskyXH
 
 ;; Author: SunskyxXH <sunskyxh@gmail.com>
-;; Version: 0.1.2
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: tools, matching
 ;; URL: https://github.com/sunskyxh/ast-grep.el
