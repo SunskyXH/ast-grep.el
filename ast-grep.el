@@ -203,14 +203,17 @@ the command being executed, working directory, and raw output."
                 (_ (funcall preview action file))))
           (funcall preview action cand))))))
 
+(defun ast-grep--async-builder (input directory)
+  "Build ast-grep command for INPUT in DIRECTORY, or nil if INPUT is too short."
+  (when (and input (>= (length input) ast-grep-async-min-input))
+    (ast-grep--build-command input directory)))
+
 (defun ast-grep--async-source (directory)
   "Create async source for DIRECTORY using consult."
   (consult--async-pipeline
    (consult--async-throttle)
    (consult--async-process
-    (lambda (input)
-      (when (and input (>= (length input) ast-grep-async-min-input))
-        (ast-grep--build-command input directory))))
+    (lambda (input) (ast-grep--async-builder input directory)))
    (consult--async-transform
     (lambda (items)
       (delq nil (mapcar #'ast-grep--parse-stream-line items))))))
@@ -292,7 +295,8 @@ DIRECTORY supports `~' expansion."
 
 (defun ast-grep--goto-match (match)
   "Go to the location specified by MATCH string.
-MATCH should be in format \\='file:line:column:text\\='."
+MATCH should be in format \\='file:line:column:text\\='.
+LINE is 1-indexed, COLUMN is 0-indexed (matching ast-grep's JSON output)."
   (when (string-match "\\`\\([^:]+\\):\\([0-9]+\\):\\([0-9]+\\):" match)
     (let ((file (match-string 1 match))
           (line (string-to-number (match-string 2 match)))
@@ -300,7 +304,7 @@ MATCH should be in format \\='file:line:column:text\\='."
       (find-file file)
       (goto-char (point-min))
       (forward-line (1- line))
-      (move-to-column (1- column)))))
+      (move-to-column column))))
 
 ;;; Mode definition
 

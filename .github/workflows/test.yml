@@ -32,6 +32,12 @@ jobs:
           nix profile install nixpkgs#ast-grep
           ast-grep --version
 
+      - name: Byte-compile
+        run: |
+          emacs -batch -L . \
+            --eval "(setq byte-compile-error-on-warn t)" \
+            -f batch-byte-compile ast-grep.el
+
       - name: Run tests
         run: |
           emacs -batch -L . -l ast-grep.el -l tests/ast-grep-test.el -f ert-run-tests-batch-and-exit
