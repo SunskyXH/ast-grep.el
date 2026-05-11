@@ -3,7 +3,7 @@
 ;; Copyright (C) 2025 SunskyXH
 
 ;; Author: SunskyxXH <sunskyxh@gmail.com>
-;; Version: 0.1.2
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: tools, matching
 ;; URL: https://github.com/sunskyxh/ast-grep.el
@@ -203,30 +203,34 @@ the command being executed, working directory, and raw output."
                 (_ (funcall preview action file))))
           (funcall preview action cand))))))
 
+(defun ast-grep--async-builder (input directory)
+  "Build ast-grep command for INPUT in DIRECTORY, or nil if INPUT is too short."
+  (when (and input (>= (length input) ast-grep-async-min-input))
+    (ast-grep--build-command input directory)))
+
 (defun ast-grep--async-source (directory)
   "Create async source for DIRECTORY using consult."
   (consult--async-pipeline
    (consult--async-throttle)
    (consult--async-process
-    (lambda (input)
-      (when (and input (>= (length input) ast-grep-async-min-input))
-        (ast-grep--build-command input directory))))
+    (lambda (input) (ast-grep--async-builder input directory)))
    (consult--async-transform
     (lambda (items)
       (delq nil (mapcar #'ast-grep--parse-stream-line items))))))
 
-(defun ast-grep--search-async (pattern directory)
-  "Search asynchronously using consult for PATTERN in DIRECTORY."
+(defun ast-grep--search-async (directory)
+  "Search asynchronously using consult in DIRECTORY.
+The ast-grep pattern is typed in the minibuffer.  Results stream
+in as you type; type after `#' to narrow with `completing-read'."
   (let ((source (ast-grep--async-source directory)))
     (consult--read
      source
-     :prompt (format "ast-grep [%s]: " pattern)
+     :prompt "ast-grep: "
      :lookup #'consult--lookup-member
      :state (ast-grep--state)
      :category 'ast-grep
      :history 'ast-grep-history
-     :require-match t
-     :initial (format "#%s#" pattern))))
+     :require-match t)))
 
 (defun ast-grep--search-sync (pattern directory)
   "Search synchronously using `completing-read' for PATTERN in DIRECTORY."
@@ -243,69 +247,56 @@ the command being executed, working directory, and raw output."
 ;;; Interactive commands
 
 ;;;###autoload
-(defun ast-grep-search (pattern &optional directory)
-  "Search for ast-grep PATTERN in DIRECTORY.
+(defun ast-grep-search (&optional directory)
+  "Search for ast-grep patterns in DIRECTORY.
 
-PATTERN is an ast-grep pattern string (e.g., \\='$A && $A()\\=').
-DIRECTORY defaults to current directory if not specified.
+DIRECTORY defaults to current directory.
 
-Interactively, prompts for pattern and uses current directory.
-Uses async search with `consult' if available.
-Otherwise sync with `completing-read'.
-Selecting a result jumps to the match location.
+When `consult' is available the pattern is typed directly in the
+minibuffer and results stream in live.  Otherwise the pattern is
+read first, then matches are shown via `completing-read'.
 
 Example patterns:
-  \\='console.log($A)\\='     - Find console.log calls
-  \\='$A && $A()\\='          - Find conditional function calls
-  \\='function $NAME() {}\\=' - Find function declarations"
-  (interactive (list (read-string "ast-grep pattern: " nil 'ast-grep-history)))
+  console.log($A)     - Find console.log calls
+  $A && $A()          - Find conditional function calls
+  function $NAME() {} - Find function declarations"
+  (interactive)
   (unless (ast-grep--executable-available-p)
     (error "The ast-grep executable not found. Please install ast-grep"))
-  
   (let ((search-dir (or directory default-directory)))
     (when-let ((selection
                 (if (require 'consult nil t)
-                    (ast-grep--search-async pattern search-dir)
-                  (ast-grep--search-sync pattern search-dir))))
+                    (ast-grep--search-async search-dir)
+                  (ast-grep--search-sync
+                   (read-string "ast-grep pattern: " nil 'ast-grep-history)
+                   search-dir))))
       (ast-grep--goto-match selection))))
 
 ;;;###autoload
-(defun ast-grep-project (pattern)
-  "Search for ast-grep PATTERN in current project.
+(defun ast-grep-project ()
+  "Search for ast-grep patterns in current project.
 
-PATTERN is an ast-grep pattern string (e.g., \\='$A && $A()\\=').
-
-Searches recursively from the project root directory.
-Requires being in a project (detected via project.el).
-Uses async search with `consult' if available.
-Otherwise sync with `completing-read'.
-
-This is equivalent to `ast-grep-search' with project root as directory."
-  (interactive (list (read-string "ast-grep pattern (project): " nil 'ast-grep-history)))
+Requires being in a project (detected via `project.el').
+Equivalent to `ast-grep-search' with the project root as directory."
+  (interactive)
   (if-let ((project-root (ast-grep--project-root)))
-      (ast-grep-search pattern project-root)
+      (ast-grep-search project-root)
     (error "Not in a project")))
 
 ;;;###autoload
-(defun ast-grep-directory (pattern directory)
-  "Search for ast-grep PATTERN in specified DIRECTORY.
+(defun ast-grep-directory (directory)
+  "Search for ast-grep patterns in DIRECTORY.
 
-PATTERN is an ast-grep pattern string (e.g., \\='$A && $A()\\=').
-DIRECTORY is the target directory path (supports ~ expansion).
-
-Interactively, prompts for both pattern and directory.
-Searches recursively from the specified directory.
-Uses async search with `consult' if available.
-Otherwise sync with `completing-read'."
-  (interactive (list (read-string "ast-grep pattern: " nil 'ast-grep-history)
-                     (read-directory-name "Directory: ")))
-  (ast-grep-search pattern directory))
+DIRECTORY supports `~' expansion."
+  (interactive (list (read-directory-name "Directory: ")))
+  (ast-grep-search directory))
 
 ;;; Helper functions
 
 (defun ast-grep--goto-match (match)
   "Go to the location specified by MATCH string.
-MATCH should be in format \\='file:line:column:text\\='."
+MATCH should be in format \\='file:line:column:text\\='.
+LINE is 1-indexed, COLUMN is 0-indexed (matching ast-grep's JSON output)."
   (when (string-match "\\`\\([^:]+\\):\\([0-9]+\\):\\([0-9]+\\):" match)
     (let ((file (match-string 1 match))
           (line (string-to-number (match-string 2 match)))
@@ -313,7 +304,7 @@ MATCH should be in format \\='file:line:column:text\\='."
       (find-file file)
       (goto-char (point-min))
       (forward-line (1- line))
-      (move-to-column (1- column)))))
+      (move-to-column column))))
 
 ;;; Mode definition
 
