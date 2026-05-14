@@ -256,10 +256,12 @@ the offsets of earlier matches in the same file."
 
 (defun ast-grep--apply-rewrites (matches)
   "Walk MATCHES interactively, applying replacements after confirmation.
-The prompt accepts y (yes), n (skip), ! (yes to all remaining),
-q (quit).  Modified buffers are left for the user to save."
+The prompt accepts y (yes), n (skip), A or ! (apply this and all
+remaining), q (quit).  Affected file-visiting buffers are saved
+after the session completes; other modified buffers are untouched."
   (let ((replaced 0)
         (skipped 0)
+        (modified-buffers nil)
         (all nil)
         (quit nil))
     (dolist (m (ast-grep--rewrite-sort matches))
@@ -283,23 +285,34 @@ q (quit).  Modified buffers are left for the user to save."
                                ?y
                              (condition-case nil
                                  (read-char-choice
-                                  (format "Replace `%s' with `%s'? (y/n/!/q) "
+                                  (format "Replace `%s' with `%s'? (y/n/A/q) "
                                           (plist-get m :text)
                                           (plist-get m :replacement))
-                                  '(?y ?n ?! ?q))
+                                  '(?y ?n ?A ?a ?! ?q))
                                (quit ?q)))))
                       (pcase choice
-                        ((or ?y ?!)
-                         (when (eq choice ?!) (setq all t))
+                        ((or ?y ?A ?a ?!)
+                         (when (memq choice '(?A ?a ?!)) (setq all t))
                          (goto-char beg)
                          (delete-region beg end)
                          (insert (plist-get m :replacement))
+                         (unless (memq buf modified-buffers)
+                           (push buf modified-buffers))
                          (setq replaced (1+ replaced)))
                         (?n (setq skipped (1+ skipped)))
                         (?q (setq quit t)))))
                 (delete-overlay overlay)))))))
-    (message "Replaced %d match(es), skipped %d%s"
-             replaced skipped
+    ;; Save the buffers we edited.  Other modified buffers are left alone.
+    (dolist (b modified-buffers)
+      (when (and (buffer-live-p b)
+                 (buffer-file-name b))
+        (with-current-buffer b
+          (when (buffer-modified-p)
+            (save-buffer)))))
+    (message "Replaced %d match(es) in %d file(s); skipped %d%s"
+             replaced
+             (length modified-buffers)
+             skipped
              (if quit " (quit)" ""))))
 
 ;;; Async functions (require consult)
@@ -425,8 +438,9 @@ DIRECTORY supports `~' expansion."
 Prompts for a pattern and a replacement template, then walks each
 match asking for confirmation, similar to
 `project-query-replace-regexp'.  The prompt accepts y (yes), n
-\(skip), ! (yes to all remaining), q (quit).  Modified buffers are
-left for the user to save.
+\(skip), A or ! (apply this and all remaining), q (quit).  Files
+that received at least one replacement are saved automatically when
+the session ends.
 
 DIRECTORY defaults to the current directory."
   (interactive)

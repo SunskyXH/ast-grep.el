@@ -373,7 +373,44 @@ and routes the chosen candidate through `ast-grep--goto-match'."
                               (plist-get m :replacement))))))
 
 (ert-deftest ast-grep-test-end-to-end-rewrite-applies-yes-to-all ()
-  "Driving the prompt with `!' rewrites every match in the fixture."
+  "Driving the prompt with `A' rewrites every match and saves the file."
+  (skip-unless (ast-grep-test--ast-grep-available-p))
+  (let* ((tmp-dir (make-temp-file "ast-grep-rewrite-" t))
+         (tmp-file (expand-file-name "sample.js" tmp-dir))
+         buf)
+    (unwind-protect
+        (progn
+          (copy-file ast-grep-test--sample-file tmp-file)
+          (cl-letf (((symbol-function 'read-string)
+                     (lambda (prompt &rest _)
+                       (cond
+                        ((string-prefix-p "ast-grep pattern" prompt)
+                         "console.log($A)")
+                        ((string-prefix-p "Rewrite" prompt)
+                         "logger.info($A)"))))
+                    ((symbol-function 'read-char-choice)
+                     (lambda (&rest _) ?A))
+                    ((symbol-function 'pop-to-buffer)
+                     (lambda (b &rest _) b)))
+            (ast-grep-rewrite tmp-dir))
+          (setq buf (find-buffer-visiting tmp-file))
+          (should buf)
+          ;; The buffer should be saved (not modified).
+          (with-current-buffer buf
+            (should-not (buffer-modified-p)))
+          ;; And the file on disk should reflect the rewrite.
+          (with-temp-buffer
+            (insert-file-contents tmp-file)
+            (let ((content (buffer-string)))
+              (should (string-match-p "logger\\.info(\"hello\")" content))
+              (should (string-match-p "logger\\.info(x)" content))
+              (should (string-match-p "logger\\.info(name)" content))
+              (should-not (string-match-p "console\\.log" content)))))
+      (when (and buf (buffer-live-p buf)) (kill-buffer buf))
+      (delete-directory tmp-dir t))))
+
+(ert-deftest ast-grep-test-end-to-end-rewrite-bang-is-alias-for-A ()
+  "`!' is accepted as a legacy alias for `A' (apply all)."
   (skip-unless (ast-grep-test--ast-grep-available-p))
   (let* ((tmp-dir (make-temp-file "ast-grep-rewrite-" t))
          (tmp-file (expand-file-name "sample.js" tmp-dir))
@@ -394,17 +431,10 @@ and routes the chosen candidate through `ast-grep--goto-match'."
                      (lambda (b &rest _) b)))
             (ast-grep-rewrite tmp-dir))
           (setq buf (find-buffer-visiting tmp-file))
-          (should buf)
-          (with-current-buffer buf
-            (should (buffer-modified-p))
-            (let ((content (buffer-string)))
-              (should (string-match-p "logger\\.info(\"hello\")" content))
-              (should (string-match-p "logger\\.info(x)" content))
-              (should (string-match-p "logger\\.info(name)" content))
-              (should-not (string-match-p "console\\.log" content)))))
-      (when (and buf (buffer-live-p buf))
-        (with-current-buffer buf (set-buffer-modified-p nil))
-        (kill-buffer buf))
+          (with-temp-buffer
+            (insert-file-contents tmp-file)
+            (should-not (string-match-p "console\\.log" (buffer-string)))))
+      (when (and buf (buffer-live-p buf)) (kill-buffer buf))
       (delete-directory tmp-dir t))))
 
 (ert-deftest ast-grep-test-end-to-end-rewrite-quit-skips-remaining ()
