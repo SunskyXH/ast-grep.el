@@ -256,9 +256,10 @@ the offsets of earlier matches in the same file."
 
 (defun ast-grep--apply-rewrites (matches)
   "Walk MATCHES interactively, applying replacements after confirmation.
-The prompt accepts y (yes), n (skip), A or ! (apply this and all
-remaining), q (quit).  Affected file-visiting buffers are saved
-after the session completes; other modified buffers are untouched."
+The prompt accepts y (yes), n (skip), ! (apply this and all
+remaining), q (quit), following `query-replace' conventions.
+Affected file-visiting buffers are saved after the session
+completes; other modified buffers are untouched."
   (let ((replaced 0)
         (skipped 0)
         (modified-buffers nil)
@@ -285,14 +286,14 @@ after the session completes; other modified buffers are untouched."
                                ?y
                              (condition-case nil
                                  (read-char-choice
-                                  (format "Replace `%s' with `%s'? (y/n/A/q) "
+                                  (format "Replace `%s' with `%s'? (y/n/!/q) "
                                           (plist-get m :text)
                                           (plist-get m :replacement))
-                                  '(?y ?n ?A ?a ?! ?q))
+                                  '(?y ?n ?! ?q))
                                (quit ?q)))))
                       (pcase choice
-                        ((or ?y ?A ?a ?!)
-                         (when (memq choice '(?A ?a ?!)) (setq all t))
+                        ((or ?y ?!)
+                         (when (eq choice ?!) (setq all t))
                          (goto-char beg)
                          (delete-region beg end)
                          (insert (plist-get m :replacement))
@@ -438,9 +439,9 @@ DIRECTORY supports `~' expansion."
 Prompts for a pattern and a replacement template, then walks each
 match asking for confirmation, similar to
 `project-query-replace-regexp'.  The prompt accepts y (yes), n
-\(skip), A or ! (apply this and all remaining), q (quit).  Files
-that received at least one replacement are saved automatically when
-the session ends.
+\(skip), ! (apply this and all remaining), q (quit).  Files that
+received at least one replacement are saved automatically when the
+session ends.
 
 DIRECTORY defaults to the current directory."
   (interactive)

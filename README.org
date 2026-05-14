@@ -70,10 +70,10 @@ Add to your ~packages.el~:
 - ~ast-grep-rewrite~ - Interactive search-and-rewrite in current directory
 - ~ast-grep-rewrite-project~ - Interactive search-and-rewrite across the project
 
-~ast-grep-rewrite~ prompts for a pattern and a replacement template, then
-walks each match asking ~y~/~n~/~A~/~q~ (yes / skip / apply-all-remaining
-/ quit), mirroring ~project-query-replace-regexp~ in flow. ~!~ is also
-accepted as an alias for ~A~. Files that received at least one
+~ast-grep-rewrite~ prompts for a pattern and a replacement template,
+then walks each match asking ~y~/~n~/~!~/~q~ (yes / skip /
+apply-all-remaining / quit), following ~query-replace~ conventions like
+~project-query-replace-regexp~. Files that received at least one
 replacement are saved automatically when the session ends; other
 modified buffers are left untouched.
 
