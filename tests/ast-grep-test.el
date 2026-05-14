@@ -71,6 +71,15 @@ TIMEOUT defaults to 5 seconds."
     (should (equal (ast-grep--build-command "pattern" "/path")
                    '("ast-grep" "run" "--pattern=pattern" "--json=stream" "/path")))))
 
+(ert-deftest ast-grep-test-build-command-with-rewrite ()
+  "Command should include --rewrite when REWRITE is provided."
+  (let ((ast-grep-executable "ast-grep"))
+    (should (equal (ast-grep--build-command "pat" nil "fix")
+                   '("ast-grep" "run" "--pattern=pat" "--rewrite=fix" "--json=stream")))
+    (should (equal (ast-grep--build-command "pat" "/path" "fix")
+                   '("ast-grep" "run" "--pattern=pat" "--rewrite=fix"
+                     "--json=stream" "/path")))))
+
 (ert-deftest ast-grep-test-parse-json-output ()
   "Test JSON output parsing."
   (let ((json-output "[{\"file\":\"test.js\",\"range\":{\"start\":{\"line\":0,\"column\":0}},\"text\":\"console.log()\"}]"))
@@ -97,6 +106,52 @@ TIMEOUT defaults to 5 seconds."
                    '("a.js:1:0:x" "b.js:3:4:y"))))
   (should-not (ast-grep--parse-stream-output nil))
   (should-not (ast-grep--parse-stream-output "")))
+
+;;; Rewrite parser tests
+
+(ert-deftest ast-grep-test-parse-rewrite-line ()
+  "Parse a JSON line that includes end position and replacement."
+  (let* ((line (concat "{\"file\":\"a.js\","
+                       "\"range\":{\"start\":{\"line\":0,\"column\":0},"
+                       "\"end\":{\"line\":0,\"column\":13}},"
+                       "\"text\":\"console.log()\","
+                       "\"replacement\":\"logger.info()\"}"))
+         (m (ast-grep--parse-rewrite-line line)))
+    (should (equal (plist-get m :file) "a.js"))
+    (should (= (plist-get m :start-line) 0))
+    (should (= (plist-get m :start-column) 0))
+    (should (= (plist-get m :end-line) 0))
+    (should (= (plist-get m :end-column) 13))
+    (should (equal (plist-get m :text) "console.log()"))
+    (should (equal (plist-get m :replacement) "logger.info()")))
+  (should-not (ast-grep--parse-rewrite-line nil))
+  (should-not (ast-grep--parse-rewrite-line ""))
+  (should-not (ast-grep--parse-rewrite-line "not-json")))
+
+(ert-deftest ast-grep-test-rewrite-sort-reverses-within-file ()
+  "Matches in the same file are sorted in reverse position order."
+  (let* ((a (list :file "a.js" :start-line 0 :start-column 0))
+         (b (list :file "a.js" :start-line 2 :start-column 4))
+         (c (list :file "a.js" :start-line 2 :start-column 8))
+         (d (list :file "b.js" :start-line 0 :start-column 0))
+         (sorted (ast-grep--rewrite-sort (list a b c d))))
+    (should (equal sorted (list c b a d)))))
+
+(ert-deftest ast-grep-test-match-region-uses-character-columns ()
+  "Region must be computed by character index, not visual column.
+A tab at the start of the line would offset `move-to-column' but
+`forward-char' lands on the correct character."
+  (with-temp-buffer
+    (insert "\tconsole.log(x);\n")
+    (let* ((match (list :start-line 0 :start-column 1
+                        :end-line 0 :end-column 15))
+           (region (ast-grep--match-region match)))
+      ;; start-column 1 must land just after the tab (position 2 in
+      ;; 1-indexed buffer coords), not in the middle of the tab's
+      ;; visual span.
+      (should (= (car region) 2))
+      (should (equal (buffer-substring (car region) (cdr region))
+                     "console.log(x)")))))
 
 ;;; Async builder tests
 
@@ -299,6 +354,88 @@ and routes the chosen candidate through `ast-grep--goto-match'."
         (unless buffer-before
           (when-let ((buf (find-buffer-visiting target)))
             (kill-buffer buf)))))))
+
+;;; Rewrite end-to-end
+
+(ert-deftest ast-grep-test-end-to-end-collect-rewrites ()
+  "Collect rewrites against the JS fixture and verify shape."
+  (skip-unless (ast-grep-test--ast-grep-available-p))
+  (let ((matches (ast-grep--collect-rewrites
+                  "console.log($A)"
+                  "logger.info($A)"
+                  ast-grep-test--fixtures-dir)))
+    (should (= 3 (length matches)))
+    (dolist (m matches)
+      (should (stringp (plist-get m :file)))
+      (should (integerp (plist-get m :start-line)))
+      (should (integerp (plist-get m :end-column)))
+      (should (string-match-p "\\`logger\\.info"
+                              (plist-get m :replacement))))))
+
+(ert-deftest ast-grep-test-end-to-end-rewrite-applies-yes-to-all ()
+  "Driving the prompt with `!' rewrites every match in the fixture."
+  (skip-unless (ast-grep-test--ast-grep-available-p))
+  (let* ((tmp-dir (make-temp-file "ast-grep-rewrite-" t))
+         (tmp-file (expand-file-name "sample.js" tmp-dir))
+         buf)
+    (unwind-protect
+        (progn
+          (copy-file ast-grep-test--sample-file tmp-file)
+          (cl-letf (((symbol-function 'read-string)
+                     (lambda (prompt &rest _)
+                       (cond
+                        ((string-prefix-p "ast-grep pattern" prompt)
+                         "console.log($A)")
+                        ((string-prefix-p "Rewrite" prompt)
+                         "logger.info($A)"))))
+                    ((symbol-function 'read-char-choice)
+                     (lambda (&rest _) ?!))
+                    ((symbol-function 'pop-to-buffer)
+                     (lambda (b &rest _) b)))
+            (ast-grep-rewrite tmp-dir))
+          (setq buf (find-buffer-visiting tmp-file))
+          (should buf)
+          (with-current-buffer buf
+            (should (buffer-modified-p))
+            (let ((content (buffer-string)))
+              (should (string-match-p "logger\\.info(\"hello\")" content))
+              (should (string-match-p "logger\\.info(x)" content))
+              (should (string-match-p "logger\\.info(name)" content))
+              (should-not (string-match-p "console\\.log" content)))))
+      (when (and buf (buffer-live-p buf))
+        (with-current-buffer buf (set-buffer-modified-p nil))
+        (kill-buffer buf))
+      (delete-directory tmp-dir t))))
+
+(ert-deftest ast-grep-test-end-to-end-rewrite-quit-skips-remaining ()
+  "Pressing `q' at the first match leaves the file untouched."
+  (skip-unless (ast-grep-test--ast-grep-available-p))
+  (let* ((tmp-dir (make-temp-file "ast-grep-rewrite-" t))
+         (tmp-file (expand-file-name "sample.js" tmp-dir))
+         buf)
+    (unwind-protect
+        (progn
+          (copy-file ast-grep-test--sample-file tmp-file)
+          (cl-letf (((symbol-function 'read-string)
+                     (lambda (prompt &rest _)
+                       (cond
+                        ((string-prefix-p "ast-grep pattern" prompt)
+                         "console.log($A)")
+                        ((string-prefix-p "Rewrite" prompt)
+                         "logger.info($A)"))))
+                    ((symbol-function 'read-char-choice)
+                     (lambda (&rest _) ?q))
+                    ((symbol-function 'pop-to-buffer)
+                     (lambda (b &rest _) b)))
+            (ast-grep-rewrite tmp-dir))
+          (setq buf (find-buffer-visiting tmp-file))
+          (when buf
+            (with-current-buffer buf
+              (should-not (buffer-modified-p))
+              (should (string-match-p "console\\.log(\"hello\")"
+                                      (buffer-string))))))
+      (when (and buf (buffer-live-p buf)) (kill-buffer buf))
+      (delete-directory tmp-dir t))))
 
 (provide 'test-ast-grep)
 

@@ -78,6 +78,9 @@ the command being executed, working directory, and raw output."
 (defvar ast-grep-history nil
   "History list for ast-grep searches.")
 
+(defvar ast-grep-rewrite-history nil
+  "History list for ast-grep rewrite templates.")
+
 (defvar ast-grep--current-process nil
   "Current ast-grep process.")
 
@@ -92,11 +95,16 @@ the command being executed, working directory, and raw output."
   (when-let ((project (project-current)))
     (project-root project)))
 
-(defun ast-grep--build-command (pattern &optional directory)
-  "Build ast-grep command with PATTERN and DIRECTORY."
+(defun ast-grep--build-command (pattern &optional directory rewrite)
+  "Build ast-grep command with PATTERN.
+Optional DIRECTORY restricts the search path.  Optional REWRITE adds
+a `--rewrite' template so ast-grep emits replacement text alongside
+each match."
   (let ((cmd (list ast-grep-executable "run"))
         (args '()))
     (push (format "--pattern=%s" pattern) args)
+    (when rewrite
+      (push (format "--rewrite=%s" rewrite) args))
     (push "--json=stream" args)
     (when directory
       ;; Expand ~ and environment variables in directory path
@@ -174,6 +182,125 @@ the command being executed, working directory, and raw output."
   (when (and output (not (string-empty-p output)))
     (let ((lines (split-string output "\n" t)))
       (delq nil (mapcar #'ast-grep--parse-stream-line lines)))))
+
+;;; Rewrite functions
+
+(defun ast-grep--parse-rewrite-line (line)
+  "Parse a single JSON LINE from ast-grep rewrite output.
+Return a plist with :file, :start-line, :start-column, :end-line,
+:end-column, :text, :replacement, or nil for malformed input."
+  (when (and line (not (string-empty-p line)))
+    (condition-case nil
+        (let* ((result (json-parse-string line :object-type 'plist))
+               (range (plist-get result :range))
+               (start (plist-get range :start))
+               (end (plist-get range :end)))
+          (list :file (plist-get result :file)
+                :start-line (plist-get start :line)
+                :start-column (plist-get start :column)
+                :end-line (plist-get end :line)
+                :end-column (plist-get end :column)
+                :text (plist-get result :text)
+                :replacement (plist-get result :replacement)))
+      (error nil))))
+
+(defun ast-grep--collect-rewrites (pattern rewrite directory)
+  "Run ast-grep with PATTERN and REWRITE in DIRECTORY.
+Return a list of match plists as produced by
+`ast-grep--parse-rewrite-line'."
+  (unless (ast-grep--executable-available-p)
+    (error "The ast-grep executable not found. Please install ast-grep"))
+  (let* ((default-directory (or directory default-directory))
+         (command (ast-grep--build-command pattern directory rewrite))
+         (output (with-temp-buffer
+                   (let ((exit-code (apply #'call-process
+                                           (car command) nil t nil
+                                           (cdr command))))
+                     (when ast-grep-debug
+                       (message "Debug: rewrite command: %s"
+                                (mapconcat #'shell-quote-argument command " "))
+                       (message "Debug: rewrite exit code: %d" exit-code))
+                     (buffer-string)))))
+    (delq nil (mapcar #'ast-grep--parse-rewrite-line
+                      (split-string output "\n" t)))))
+
+(defun ast-grep--match-region (match)
+  "Compute (BEG . END) buffer positions in current buffer for MATCH.
+Uses `forward-char' rather than `move-to-column' because ast-grep
+reports character-index columns, while `move-to-column' uses visual
+columns that change with `tab-width' and double-width characters."
+  (save-excursion
+    (goto-char (point-min))
+    (forward-line (plist-get match :start-line))
+    (forward-char (plist-get match :start-column))
+    (let ((beg (point)))
+      (goto-char (point-min))
+      (forward-line (plist-get match :end-line))
+      (forward-char (plist-get match :end-column))
+      (cons beg (point)))))
+
+(defun ast-grep--rewrite-sort (matches)
+  "Return MATCHES sorted by file ascending, position descending.
+Reversing within a file lets edits be applied without invalidating
+the offsets of earlier matches in the same file."
+  (sort (copy-sequence matches)
+        (lambda (a b)
+          (let ((fa (plist-get a :file))
+                (fb (plist-get b :file)))
+            (cond
+             ((not (equal fa fb)) (string< fa fb))
+             ((/= (plist-get a :start-line) (plist-get b :start-line))
+              (> (plist-get a :start-line) (plist-get b :start-line)))
+             (t (> (plist-get a :start-column)
+                   (plist-get b :start-column))))))))
+
+(defun ast-grep--apply-rewrites (matches)
+  "Walk MATCHES interactively, applying replacements after confirmation.
+The prompt accepts y (yes), n (skip), ! (yes to all remaining),
+q (quit).  Modified buffers are left for the user to save."
+  (let ((replaced 0)
+        (skipped 0)
+        (all nil)
+        (quit nil))
+    (dolist (m (ast-grep--rewrite-sort matches))
+      (unless quit
+        (let* ((file (plist-get m :file))
+               (buf (or (find-buffer-visiting file)
+                        (find-file-noselect file))))
+          (with-current-buffer buf
+            (let* ((region (ast-grep--match-region m))
+                   (beg (car region))
+                   (end (cdr region))
+                   (overlay (make-overlay beg end)))
+              (overlay-put overlay 'face 'query-replace)
+              (overlay-put overlay 'priority 1001)
+              (unwind-protect
+                  (progn
+                    (pop-to-buffer buf)
+                    (goto-char beg)
+                    (let ((choice
+                           (if all
+                               ?y
+                             (condition-case nil
+                                 (read-char-choice
+                                  (format "Replace `%s' with `%s'? (y/n/!/q) "
+                                          (plist-get m :text)
+                                          (plist-get m :replacement))
+                                  '(?y ?n ?! ?q))
+                               (quit ?q)))))
+                      (pcase choice
+                        ((or ?y ?!)
+                         (when (eq choice ?!) (setq all t))
+                         (goto-char beg)
+                         (delete-region beg end)
+                         (insert (plist-get m :replacement))
+                         (setq replaced (1+ replaced)))
+                        (?n (setq skipped (1+ skipped)))
+                        (?q (setq quit t)))))
+                (delete-overlay overlay)))))))
+    (message "Replaced %d match(es), skipped %d%s"
+             replaced skipped
+             (if quit " (quit)" ""))))
 
 ;;; Async functions (require consult)
 
@@ -290,6 +417,40 @@ Equivalent to `ast-grep-search' with the project root as directory."
 DIRECTORY supports `~' expansion."
   (interactive (list (read-directory-name "Directory: ")))
   (ast-grep-search directory))
+
+;;;###autoload
+(defun ast-grep-rewrite (&optional directory)
+  "Search for ast-grep patterns in DIRECTORY and rewrite them interactively.
+
+Prompts for a pattern and a replacement template, then walks each
+match asking for confirmation, similar to
+`project-query-replace-regexp'.  The prompt accepts y (yes), n
+\(skip), ! (yes to all remaining), q (quit).  Modified buffers are
+left for the user to save.
+
+DIRECTORY defaults to the current directory."
+  (interactive)
+  (unless (ast-grep--executable-available-p)
+    (error "The ast-grep executable not found. Please install ast-grep"))
+  (let* ((search-dir (or directory default-directory))
+         (pattern (read-string "ast-grep pattern: " nil 'ast-grep-history))
+         (rewrite (read-string (format "Rewrite `%s' with: " pattern)
+                               nil 'ast-grep-rewrite-history))
+         (matches (ast-grep--collect-rewrites pattern rewrite search-dir)))
+    (if (null matches)
+        (message "No matches for pattern: %s" pattern)
+      (ast-grep--apply-rewrites matches))))
+
+;;;###autoload
+(defun ast-grep-rewrite-project ()
+  "Rewrite ast-grep patterns across the current project.
+
+Requires being in a project (detected via `project.el').
+Equivalent to `ast-grep-rewrite' with the project root as directory."
+  (interactive)
+  (if-let ((project-root (ast-grep--project-root)))
+      (ast-grep-rewrite project-root)
+    (error "Not in a project")))
 
 ;;; Helper functions
 

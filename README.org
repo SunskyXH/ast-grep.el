@@ -17,6 +17,7 @@ An Emacs interface to [[https://github.com/ast-grep/ast-grep][ast-grep]], a CLI 
 - Integration with completing-read frameworks (Vertico, etc.)
 - Streaming JSON parsing for efficient processing
 - Async search with live results when consult is available
+- Interactive rewrite across files (~project-query-replace-regexp~ style)
 
 ** Requirements
 
@@ -64,8 +65,15 @@ Add to your ~packages.el~:
 *** Interactive Commands
 
 - ~ast-grep-search~ - Search for patterns in current directory
-- ~ast-grep-project~ - Search for patterns in current project  
+- ~ast-grep-project~ - Search for patterns in current project
 - ~ast-grep-directory~ - Search for patterns in specified directory
+- ~ast-grep-rewrite~ - Interactive search-and-rewrite in current directory
+- ~ast-grep-rewrite-project~ - Interactive search-and-rewrite across the project
+
+~ast-grep-rewrite~ prompts for a pattern and a replacement template, then
+walks each match asking ~y~/~n~/~!~/~q~ (yes / skip / yes-to-all / quit),
+mirroring ~project-query-replace-regexp~. Modified buffers are left for
+you to save with ~save-some-buffers~.
 
 *** Minor Mode
 
