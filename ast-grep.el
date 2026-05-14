@@ -258,8 +258,9 @@ the offsets of earlier matches in the same file."
   "Walk MATCHES interactively, applying replacements after confirmation.
 The prompt accepts y (yes), n (skip), ! (apply this and all
 remaining), q (quit), following `query-replace' conventions.
-Affected file-visiting buffers are saved after the session
-completes; other modified buffers are untouched."
+Modified buffers are left for the user to save with
+`save-some-buffers' (\\[save-some-buffers]), matching
+`project-query-replace-regexp' behaviour."
   (let ((replaced 0)
         (skipped 0)
         (modified-buffers nil)
@@ -303,18 +304,17 @@ completes; other modified buffers are untouched."
                         (?n (setq skipped (1+ skipped)))
                         (?q (setq quit t)))))
                 (delete-overlay overlay)))))))
-    ;; Save the buffers we edited.  Other modified buffers are left alone.
-    (dolist (b modified-buffers)
-      (when (and (buffer-live-p b)
-                 (buffer-file-name b))
-        (with-current-buffer b
-          (when (buffer-modified-p)
-            (save-buffer)))))
-    (message "Replaced %d match(es) in %d file(s); skipped %d%s"
-             replaced
-             (length modified-buffers)
-             skipped
-             (if quit " (quit)" ""))))
+    (message
+     "%s"
+     (substitute-command-keys
+      (format "Replaced %d match(es) in %d file(s); skipped %d%s%s"
+              replaced
+              (length modified-buffers)
+              skipped
+              (if quit " (quit)" "")
+              (if modified-buffers
+                  "; use \\[save-some-buffers] to save"
+                ""))))))
 
 ;;; Async functions (require consult)
 
@@ -439,9 +439,8 @@ DIRECTORY supports `~' expansion."
 Prompts for a pattern and a replacement template, then walks each
 match asking for confirmation, similar to
 `project-query-replace-regexp'.  The prompt accepts y (yes), n
-\(skip), ! (apply this and all remaining), q (quit).  Files that
-received at least one replacement are saved automatically when the
-session ends.
+\(skip), ! (apply this and all remaining), q (quit).  Modified
+buffers are left for the user to save with `save-some-buffers'.
 
 DIRECTORY defaults to the current directory."
   (interactive)

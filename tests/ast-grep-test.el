@@ -373,7 +373,8 @@ and routes the chosen candidate through `ast-grep--goto-match'."
                               (plist-get m :replacement))))))
 
 (ert-deftest ast-grep-test-end-to-end-rewrite-applies-yes-to-all ()
-  "Driving the prompt with `!' rewrites every match and saves the file."
+  "Driving the prompt with `!' rewrites every match in the buffer.
+The file on disk stays untouched; the user is expected to save."
   (skip-unless (ast-grep-test--ast-grep-available-p))
   (let* ((tmp-dir (make-temp-file "ast-grep-rewrite-" t))
          (tmp-file (expand-file-name "sample.js" tmp-dir))
@@ -395,18 +396,23 @@ and routes the chosen candidate through `ast-grep--goto-match'."
             (ast-grep-rewrite tmp-dir))
           (setq buf (find-buffer-visiting tmp-file))
           (should buf)
-          ;; The buffer should be saved (not modified).
+          ;; Buffer should be modified (unsaved), matching
+          ;; `project-query-replace-regexp' semantics.
           (with-current-buffer buf
-            (should-not (buffer-modified-p)))
-          ;; And the file on disk should reflect the rewrite.
-          (with-temp-buffer
-            (insert-file-contents tmp-file)
+            (should (buffer-modified-p))
             (let ((content (buffer-string)))
               (should (string-match-p "logger\\.info(\"hello\")" content))
               (should (string-match-p "logger\\.info(x)" content))
               (should (string-match-p "logger\\.info(name)" content))
-              (should-not (string-match-p "console\\.log" content)))))
-      (when (and buf (buffer-live-p buf)) (kill-buffer buf))
+              (should-not (string-match-p "console\\.log" content))))
+          ;; File on disk should be untouched until the user saves.
+          (with-temp-buffer
+            (insert-file-contents tmp-file)
+            (should (string-match-p "console\\.log(\"hello\")"
+                                    (buffer-string)))))
+      (when (and buf (buffer-live-p buf))
+        (with-current-buffer buf (set-buffer-modified-p nil))
+        (kill-buffer buf))
       (delete-directory tmp-dir t))))
 
 (ert-deftest ast-grep-test-end-to-end-rewrite-quit-skips-remaining ()

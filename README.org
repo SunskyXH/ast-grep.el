@@ -73,9 +73,8 @@ Add to your ~packages.el~:
 ~ast-grep-rewrite~ prompts for a pattern and a replacement template,
 then walks each match asking ~y~/~n~/~!~/~q~ (yes / skip /
 apply-all-remaining / quit), following ~query-replace~ conventions like
-~project-query-replace-regexp~. Files that received at least one
-replacement are saved automatically when the session ends; other
-modified buffers are left untouched.
+~project-query-replace-regexp~. Modified buffers are left for you to
+save with ~M-x save-some-buffers~ (~C-x s~).
 
 *** Minor Mode
 
