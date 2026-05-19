@@ -3,7 +3,7 @@
 ;; Copyright (C) 2025 SunskyXH
 
 ;; Author: SunskyxXH <sunskyxh@gmail.com>
-;; Version: 0.3.0
+;; Version: 0.4.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: tools, matching
 ;; URL: https://github.com/sunskyxh/ast-grep.el
@@ -35,7 +35,8 @@
 ;; - Project-wide search
 ;; - Integration with completing-read (Vertico, etc.)
 ;; - Streaming JSON parsing for efficient processing
-;; - Async search with live results (when consult is available)
+;; - Async search with live results (consult, or counsel/ivy when
+;;   `ivy-mode' is active)
 
 ;;; Code:
 
@@ -49,6 +50,10 @@
 (declare-function consult--read "consult")
 (declare-function consult--lookup-member "consult")
 (declare-function consult--file-preview "consult")
+(declare-function ivy-read "ivy")
+(declare-function ivy-more-chars "ivy")
+(declare-function counsel--async-command "counsel")
+(declare-function counsel--async-filter "counsel")
 
 (defgroup ast-grep nil
   "Search code using ast-grep."
@@ -73,6 +78,26 @@ the command being executed, working directory, and raw output."
   :type 'integer
   :group 'ast-grep)
 
+(defcustom ast-grep-search-backend 'auto
+  "Backend selector for `ast-grep-search'.
+`auto' (default) picks the best available backend:
+ - consult async when consult is loadable and `ivy-mode' is off
+   \(consult's async/preview hooks are not compatible with ivy's
+   minibuffer hijack);
+ - counsel/ivy async when `ivy-mode' is active and counsel is
+   loadable;
+ - synchronous `completing-read' otherwise.
+`consult' forces the consult async pipeline; falls back to sync if
+consult is not loadable.
+`ivy' forces the counsel/ivy async pipeline; falls back to sync if
+counsel/ivy is not loadable.
+`sync' forces the synchronous `completing-read' path."
+  :type '(choice (const :tag "Auto-detect" auto)
+                 (const :tag "Consult async" consult)
+                 (const :tag "Counsel/ivy async" ivy)
+                 (const :tag "Sync completing-read" sync))
+  :group 'ast-grep)
+
 ;;; Internal variables
 
 (defvar ast-grep-history nil
@@ -94,6 +119,29 @@ the command being executed, working directory, and raw output."
   "Get the current project root directory."
   (when-let ((project (project-current)))
     (project-root project)))
+
+(defun ast-grep--ivy-available-p ()
+  "Return non-nil when both ivy and counsel are loadable."
+  (and (require 'ivy nil t) (require 'counsel nil t)))
+
+(defun ast-grep--select-backend ()
+  "Return the resolved backend symbol: `consult', `ivy', or `sync'.
+Honours `ast-grep-search-backend'.  In `auto' mode, prefers consult
+when no incompatible UI (`ivy-mode') is active, falls back to ivy
+async when `ivy-mode' is on and counsel is loadable, otherwise
+sync.  The consult/ivy explicit choices also fall back to sync if
+their dependencies are missing."
+  (pcase ast-grep-search-backend
+    ('sync 'sync)
+    ('consult (if (require 'consult nil t) 'consult 'sync))
+    ('ivy (if (ast-grep--ivy-available-p) 'ivy 'sync))
+    ('auto
+     (cond
+      ((and (require 'consult nil t) (not (bound-and-true-p ivy-mode)))
+       'consult)
+      ((and (bound-and-true-p ivy-mode) (ast-grep--ivy-available-p))
+       'ivy)
+      (t 'sync)))))
 
 (defun ast-grep--build-command (pattern &optional directory rewrite)
   "Build ast-grep command with PATTERN.
@@ -385,6 +433,60 @@ in as you type; type after `#' to narrow with `completing-read'."
         (message "No matches found for pattern: %s" pattern)
         nil))))
 
+;;; Ivy/counsel async functions (require ivy + counsel)
+
+(defvar ast-grep--ivy-search-directory nil
+  "Search directory captured for the in-flight ivy async session.
+Bound around the dynamic call to `ivy-read' in
+`ast-grep--search-ivy-async' so the collection function can see it
+on each keystroke without escaping into a closure.")
+
+(defun ast-grep--ivy-async-filter (process raw)
+  "Filter PROCESS output RAW for the counsel/ivy async path.
+Buffers partial lines per process, parses complete JSON lines into
+the `file:line:col:text' display format, then forwards them to
+`counsel--async-filter' which updates `ivy--all-candidates'."
+  (let* ((pending (or (process-get process 'ast-grep--pending) ""))
+         (chunk (concat pending raw))
+         (parts (split-string chunk "\n"))
+         (tail (car (last parts)))
+         (complete (butlast parts))
+         (lines (delq nil (mapcar #'ast-grep--parse-stream-line complete))))
+    (process-put process 'ast-grep--pending tail)
+    (counsel--async-filter
+     process
+     (if lines
+         (concat (mapconcat #'identity lines "\n") "\n")
+       ""))))
+
+(defun ast-grep--ivy-function (input)
+  "Dynamic collection function for the ivy async path.
+Spawns ast-grep for INPUT against `ast-grep--ivy-search-directory'
+once INPUT clears `ast-grep-async-min-input'; before that the
+ivy-more-chars placeholder keeps the minibuffer responsive."
+  (or (ivy-more-chars)
+      (when (>= (length input) ast-grep-async-min-input)
+        (counsel--async-command
+         (mapconcat #'shell-quote-argument
+                    (ast-grep--build-command
+                     input ast-grep--ivy-search-directory)
+                    " ")
+         nil
+         #'ast-grep--ivy-async-filter)
+        nil)))
+
+(defun ast-grep--search-ivy-async (directory)
+  "Search asynchronously using counsel/ivy in DIRECTORY.
+Mirrors the consult path's UX: type the ast-grep pattern directly
+in the minibuffer and watch results stream in."
+  (let ((ast-grep--ivy-search-directory directory))
+    (ivy-read "ast-grep: "
+              #'ast-grep--ivy-function
+              :dynamic-collection t
+              :history 'ast-grep-history
+              :require-match t
+              :caller 'ast-grep-search)))
+
 ;;; Interactive commands
 
 ;;;###autoload
@@ -393,9 +495,10 @@ in as you type; type after `#' to narrow with `completing-read'."
 
 DIRECTORY defaults to current directory.
 
-When `consult' is available the pattern is typed directly in the
-minibuffer and results stream in live.  Otherwise the pattern is
-read first, then matches are shown via `completing-read'.
+The backend is chosen by `ast-grep-search-backend'.  In the default
+`auto' mode you get the consult async pipeline when consult is
+available, the counsel/ivy async pipeline when `ivy-mode' is on,
+and a synchronous `completing-read' fallback otherwise.
 
 Example patterns:
   console.log($A)     - Find console.log calls
@@ -406,11 +509,13 @@ Example patterns:
     (error "The ast-grep executable not found. Please install ast-grep"))
   (let ((search-dir (or directory default-directory)))
     (when-let ((selection
-                (if (require 'consult nil t)
-                    (ast-grep--search-async search-dir)
-                  (ast-grep--search-sync
-                   (read-string "ast-grep pattern: " nil 'ast-grep-history)
-                   search-dir))))
+                (pcase (ast-grep--select-backend)
+                  ('consult (ast-grep--search-async search-dir))
+                  ('ivy (ast-grep--search-ivy-async search-dir))
+                  ('sync (ast-grep--search-sync
+                          (read-string "ast-grep pattern: " nil
+                                       'ast-grep-history)
+                          search-dir)))))
       (ast-grep--goto-match selection))))
 
 ;;;###autoload

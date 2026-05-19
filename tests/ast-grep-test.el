@@ -12,6 +12,11 @@
 (require 'ert)
 (require 'ast-grep)
 
+;; Declare ivy-mode as a special variable so `let' bindings in tests are
+;; dynamic (visible to `bound-and-true-p').  Without this, lexical-binding
+;; makes the binding invisible to the backend selector.
+(defvar ivy-mode)
+
 (defconst ast-grep-test--fixtures-dir
   (expand-file-name "fixtures/"
                     (file-name-directory
@@ -211,6 +216,174 @@ A tab at the start of the line would offset `move-to-column' but
                (error "Command failed"))))
     (let ((candidates (ast-grep--candidates "pattern")))
       (should-not candidates))))
+
+;;; Backend selection tests
+
+(ert-deftest ast-grep-test-select-backend-sync ()
+  "`sync' backend is honoured regardless of consult/ivy availability."
+  (let ((ast-grep-search-backend 'sync))
+    (should (eq 'sync (ast-grep--select-backend)))))
+
+(ert-deftest ast-grep-test-select-backend-auto-with-ivy-no-counsel ()
+  "Auto backend falls back to sync when ivy-mode is on but counsel is missing.
+Even if consult is loadable, ivy/consult incompatibility forces the
+sync path; counsel must also be loadable to take the ivy async path."
+  (let ((ast-grep-search-backend 'auto)
+        (ivy-mode t))
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &optional _filename _noerror)
+                 (unless (memq feature '(counsel ivy)) t))))
+      (should (eq 'sync (ast-grep--select-backend))))))
+
+(ert-deftest ast-grep-test-select-backend-auto-without-consult ()
+  "Auto backend falls back to sync when neither consult nor ivy is available."
+  (let ((ast-grep-search-backend 'auto))
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &optional _filename _noerror)
+                 (unless (memq feature '(consult counsel ivy)) t))))
+      (should (eq 'sync (ast-grep--select-backend))))))
+
+(ert-deftest ast-grep-test-select-backend-auto-with-consult ()
+  "Auto backend picks consult when it is loadable and ivy-mode is off."
+  (skip-unless ast-grep-test--consult-available)
+  (let ((ast-grep-search-backend 'auto)
+        (ivy-mode nil))
+    (should (eq 'consult (ast-grep--select-backend)))))
+
+(ert-deftest ast-grep-test-select-backend-auto-with-ivy-and-counsel ()
+  "Auto backend picks ivy when ivy-mode is active and counsel is available.
+This remains true even when consult is also loadable, because consult's
+async minibuffer hooks are not compatible with ivy."
+  (let ((ast-grep-search-backend 'auto)
+        (ivy-mode t))
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &optional _filename _noerror)
+                 (cond
+                  ((memq feature '(consult counsel ivy)) t)
+                  (t nil)))))
+      (should (eq 'ivy (ast-grep--select-backend))))))
+
+(ert-deftest ast-grep-test-select-backend-force-consult-without-consult ()
+  "Forced `consult' falls back to sync when consult is not loadable."
+  (let ((ast-grep-search-backend 'consult))
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &optional _filename _noerror)
+                 (unless (eq feature 'consult) t))))
+      (should (eq 'sync (ast-grep--select-backend))))))
+
+(ert-deftest ast-grep-test-select-backend-force-ivy-without-counsel ()
+  "Forced `ivy' falls back to sync when counsel/ivy are not loadable."
+  (let ((ast-grep-search-backend 'ivy))
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &optional _filename _noerror)
+                 (unless (memq feature '(counsel ivy)) t))))
+      (should (eq 'sync (ast-grep--select-backend))))))
+
+(ert-deftest ast-grep-test-search-with-ivy-mode-uses-ivy-async ()
+  "With ivy-mode active and counsel available, `ast-grep-search'
+must route to `ivy-read', not `consult--read' or the sync prompt."
+  (skip-unless (ast-grep-test--ast-grep-available-p))
+  (let* ((target ast-grep-test--sample-file)
+         (selection (format "%s:5:2:console.log(name)" target))
+         (consult-calls 0)
+         (ivy-calls 0)
+         (read-string-calls 0)
+         (buffer-before (find-buffer-visiting target)))
+    (cl-letf* ((ivy-mode t)
+               ((symbol-function 'require)
+                (lambda (feature &optional _filename _noerror)
+                  ;; Make counsel/ivy appear available, hide consult to
+                  ;; force the ivy branch deterministically.
+                  (cond
+                   ((eq feature 'consult) nil)
+                   (t t))))
+               ((symbol-function 'consult--read)
+                (lambda (&rest _args)
+                  (cl-incf consult-calls)
+                  selection))
+               ((symbol-function 'ivy-read)
+                (lambda (&rest _args)
+                  (cl-incf ivy-calls)
+                  selection))
+               ((symbol-function 'read-string)
+                (lambda (&rest _args)
+                  (cl-incf read-string-calls)
+                  "console.log($A)")))
+      (unwind-protect
+          (progn
+            (ast-grep-search ast-grep-test--fixtures-dir)
+            (should (zerop consult-calls))
+            (should (zerop read-string-calls))
+            (should (= 1 ivy-calls)))
+        (unless buffer-before
+          (when-let ((buf (find-buffer-visiting target)))
+            (kill-buffer buf)))))))
+
+(ert-deftest ast-grep-test-search-with-ivy-mode-and-consult-uses-ivy-async ()
+  "With ivy-mode active, installed consult must not steal the backend."
+  (let ((ast-grep-search-backend 'auto)
+        (ivy-mode t)
+        (selection "test.js:1:0:hit")
+        (routed-selection nil)
+        (consult-calls 0)
+        (ivy-calls 0))
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &optional _filename _noerror)
+                 (cond
+                  ((memq feature '(consult counsel ivy)) t)
+                  (t nil))))
+              ((symbol-function 'ast-grep--executable-available-p)
+               (lambda () t))
+              ((symbol-function 'consult--read)
+               (lambda (&rest _args)
+                 (cl-incf consult-calls)
+                 (error "consult backend should not be used under ivy-mode")))
+              ((symbol-function 'ivy-read)
+               (lambda (&rest _args)
+                 (cl-incf ivy-calls)
+                 selection))
+              ((symbol-function 'ast-grep--goto-match)
+               (lambda (candidate)
+                 (setq routed-selection candidate))))
+      (ast-grep-search ast-grep-test--fixtures-dir)
+      (should (zerop consult-calls))
+      (should (= 1 ivy-calls))
+      (should (equal routed-selection selection)))))
+
+(ert-deftest ast-grep-test-ivy-async-filter-transforms-json-to-display ()
+  "The ivy async process filter turns ast-grep JSON into display lines
+and hands the transformed output to `counsel--async-filter'."
+  (let* ((proc (start-process "ast-grep-test-filter" nil "true"))
+         (captured nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'counsel--async-filter)
+                   (lambda (_process str)
+                     (setq captured (concat captured str)))))
+          (ast-grep--ivy-async-filter
+           proc
+           (concat "{\"file\":\"a.js\",\"range\":{\"start\":{\"line\":0,\"column\":0}},\"text\":\"x\"}\n"
+                   "{\"file\":\"b.js\",\"range\":{\"start\":{\"line\":2,\"column\":4}},\"text\":\"y\"}\n"))
+          (should (equal captured "a.js:1:0:x\nb.js:3:4:y\n")))
+      (when (process-live-p proc) (delete-process proc)))))
+
+(ert-deftest ast-grep-test-ivy-async-filter-buffers-partial-lines ()
+  "Partial JSON chunks are buffered until a newline arrives, so a
+match split across two reads still emits exactly one display line."
+  (let* ((proc (start-process "ast-grep-test-filter" nil "true"))
+         (captured ""))
+    (unwind-protect
+        (cl-letf (((symbol-function 'counsel--async-filter)
+                   (lambda (_process str)
+                     (setq captured (concat captured str)))))
+          (ast-grep--ivy-async-filter
+           proc
+           "{\"file\":\"a.js\",\"range\":{\"start\":{\"line\":0,\"")
+          (should (equal captured ""))
+          (ast-grep--ivy-async-filter
+           proc
+           "column\":0}},\"text\":\"x\"}\n")
+          (should (equal captured "a.js:1:0:x\n")))
+      (when (process-live-p proc) (delete-process proc)))))
 
 ;;; End-to-end (require ast-grep binary)
 

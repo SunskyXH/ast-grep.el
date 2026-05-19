@@ -16,14 +16,16 @@ An Emacs interface to [[https://github.com/ast-grep/ast-grep][ast-grep]], a CLI 
 - Project-wide search support
 - Integration with completing-read frameworks (Vertico, etc.)
 - Streaming JSON parsing for efficient processing
-- Async search with live results when consult is available
+- Async search with live results via consult, or via counsel/ivy when ~ivy-mode~ is active
 - Interactive rewrite across files (~project-query-replace-regexp~ style)
 
 ** Requirements
 
 - Emacs 28.1 or later
 - [[https://github.com/ast-grep/ast-grep][ast-grep]] CLI tool installed and available in PATH
-- Optional: [[https://github.com/minad/consult][consult]] for live async search results
+- Optional, for live async search:
+  - [[https://github.com/minad/consult][consult]] (pairs with Vertico, Selectrum, etc.), or
+  - [[https://github.com/abo-abo/swiper][ivy + counsel]] when ~ivy-mode~ is active (consult and ivy do not mix; the backend is auto-selected)
 
 ** Installation
 
@@ -87,3 +89,4 @@ Customize the following variables:
 - ~ast-grep-executable~ - Path to ast-grep executable (default: "ast-grep")
 - ~ast-grep-debug~ - Enable debug output for troubleshooting (default: nil)
 - ~ast-grep-async-min-input~ - Minimum input length before triggering async search (default: 3)
+- ~ast-grep-search-backend~ - Backend for ~ast-grep-search~ (default: ~auto~; also accepts ~consult~, ~ivy~, ~sync~). ~auto~ picks consult when available and ~ivy-mode~ is off, counsel/ivy when ~ivy-mode~ is on, and synchronous ~completing-read~ otherwise.
