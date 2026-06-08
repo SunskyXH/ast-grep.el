@@ -95,6 +95,17 @@ the command being executed, working directory, and raw output."
   (when-let ((project (project-current)))
     (project-root project)))
 
+(defun ast-grep--remote-directory-p (&optional directory)
+  "Return non-nil when DIRECTORY, or `default-directory', is remote."
+  (file-remote-p (expand-file-name (or directory default-directory))))
+
+(defun ast-grep--ensure-local-directory (&optional directory)
+  "Signal when DIRECTORY should not be searched by local ast-grep."
+  (when (ast-grep--remote-directory-p directory)
+    (error "Refusing to run ast-grep in remote directory: %s"
+           (abbreviate-file-name
+            (expand-file-name (or directory default-directory))))))
+
 (defun ast-grep--build-command (pattern &optional directory rewrite)
   "Build ast-grep command with PATTERN.
 Optional DIRECTORY restricts the search path.  Optional REWRITE adds
@@ -115,6 +126,7 @@ each match."
 
 (defun ast-grep--run-command (pattern &optional directory)
   "Run ast-grep command with PATTERN in DIRECTORY."
+  (ast-grep--ensure-local-directory directory)
   (unless (ast-grep--executable-available-p)
     (error "The ast-grep executable not found. Please install ast-grep"))
   
@@ -208,6 +220,7 @@ Return a plist with :file, :start-line, :start-column, :end-line,
   "Run ast-grep with PATTERN and REWRITE in DIRECTORY.
 Return a list of match plists as produced by
 `ast-grep--parse-rewrite-line'."
+  (ast-grep--ensure-local-directory directory)
   (unless (ast-grep--executable-available-p)
     (error "The ast-grep executable not found. Please install ast-grep"))
   (let* ((default-directory (or directory default-directory))
@@ -402,9 +415,10 @@ Example patterns:
   $A && $A()          - Find conditional function calls
   function $NAME() {} - Find function declarations"
   (interactive)
-  (unless (ast-grep--executable-available-p)
-    (error "The ast-grep executable not found. Please install ast-grep"))
   (let ((search-dir (or directory default-directory)))
+    (ast-grep--ensure-local-directory search-dir)
+    (unless (ast-grep--executable-available-p)
+      (error "The ast-grep executable not found. Please install ast-grep"))
     (when-let ((selection
                 (if (require 'consult nil t)
                     (ast-grep--search-async search-dir)
@@ -420,8 +434,11 @@ Example patterns:
 Requires being in a project (detected via `project.el').
 Equivalent to `ast-grep-search' with the project root as directory."
   (interactive)
+  (ast-grep--ensure-local-directory default-directory)
   (if-let ((project-root (ast-grep--project-root)))
-      (ast-grep-search project-root)
+      (progn
+        (ast-grep--ensure-local-directory project-root)
+        (ast-grep-search project-root))
     (error "Not in a project")))
 
 ;;;###autoload
@@ -444,16 +461,17 @@ buffers are left for the user to save with `save-some-buffers'.
 
 DIRECTORY defaults to the current directory."
   (interactive)
-  (unless (ast-grep--executable-available-p)
-    (error "The ast-grep executable not found. Please install ast-grep"))
-  (let* ((search-dir (or directory default-directory))
-         (pattern (read-string "ast-grep pattern: " nil 'ast-grep-history))
-         (rewrite (read-string (format "Rewrite `%s' with: " pattern)
-                               nil 'ast-grep-rewrite-history))
-         (matches (ast-grep--collect-rewrites pattern rewrite search-dir)))
-    (if (null matches)
-        (message "No matches for pattern: %s" pattern)
-      (ast-grep--apply-rewrites matches))))
+  (let ((search-dir (or directory default-directory)))
+    (ast-grep--ensure-local-directory search-dir)
+    (unless (ast-grep--executable-available-p)
+      (error "The ast-grep executable not found. Please install ast-grep"))
+    (let* ((pattern (read-string "ast-grep pattern: " nil 'ast-grep-history))
+           (rewrite (read-string (format "Rewrite `%s' with: " pattern)
+                                 nil 'ast-grep-rewrite-history))
+           (matches (ast-grep--collect-rewrites pattern rewrite search-dir)))
+      (if (null matches)
+          (message "No matches for pattern: %s" pattern)
+        (ast-grep--apply-rewrites matches)))))
 
 ;;;###autoload
 (defun ast-grep-rewrite-project ()
@@ -462,8 +480,11 @@ DIRECTORY defaults to the current directory."
 Requires being in a project (detected via `project.el').
 Equivalent to `ast-grep-rewrite' with the project root as directory."
   (interactive)
+  (ast-grep--ensure-local-directory default-directory)
   (if-let ((project-root (ast-grep--project-root)))
-      (ast-grep-rewrite project-root)
+      (progn
+        (ast-grep--ensure-local-directory project-root)
+        (ast-grep-rewrite project-root))
     (error "Not in a project")))
 
 ;;; Helper functions

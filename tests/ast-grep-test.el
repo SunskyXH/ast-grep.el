@@ -212,6 +212,76 @@ A tab at the start of the line would offset `move-to-column' but
     (let ((candidates (ast-grep--candidates "pattern")))
       (should-not candidates))))
 
+;;; TRAMP protection tests
+
+(ert-deftest ast-grep-test-remote-directory-p ()
+  "Remote directories are detected without contacting the remote host."
+  (should (ast-grep--remote-directory-p "/ssh:example:/repo/"))
+  (should-not (ast-grep--remote-directory-p ast-grep-test--fixtures-dir)))
+
+(ert-deftest ast-grep-test-run-command-refuses-remote-before-executable ()
+  "Remote command execution fails before looking up ast-grep locally."
+  (let ((executable-calls 0))
+    (cl-letf (((symbol-function 'ast-grep--executable-available-p)
+               (lambda ()
+                 (cl-incf executable-calls)
+                 t)))
+      (should-error
+       (ast-grep--run-command "console.log($A)" "/ssh:example:/repo/")
+       :type 'error)
+      (should (zerop executable-calls)))))
+
+(ert-deftest ast-grep-test-collect-rewrites-refuses-remote-before-executable ()
+  "Remote rewrite collection fails before looking up ast-grep locally."
+  (let ((executable-calls 0))
+    (cl-letf (((symbol-function 'ast-grep--executable-available-p)
+               (lambda ()
+                 (cl-incf executable-calls)
+                 t)))
+      (should-error
+       (ast-grep--collect-rewrites
+        "console.log($A)" "logger.info($A)" "/ssh:example:/repo/")
+       :type 'error)
+      (should (zerop executable-calls)))))
+
+(ert-deftest ast-grep-test-search-refuses-remote-before-backend ()
+  "Remote search fails before probing consult or ast-grep."
+  (let ((executable-calls 0)
+        (require-calls 0))
+    (cl-letf (((symbol-function 'ast-grep--executable-available-p)
+               (lambda ()
+                 (cl-incf executable-calls)
+                 t))
+              ((symbol-function 'require)
+               (lambda (&rest _args)
+                 (cl-incf require-calls)
+                 t)))
+      (should-error (ast-grep-search "/ssh:example:/repo/") :type 'error)
+      (should (zerop executable-calls))
+      (should (zerop require-calls)))))
+
+(ert-deftest ast-grep-test-project-refuses-remote-before-project-current ()
+  "`ast-grep-project' fails before project.el inspects remote directories."
+  (let ((default-directory "/ssh:example:/repo/src/")
+        (project-current-calls 0))
+    (cl-letf (((symbol-function 'project-current)
+               (lambda (&rest _args)
+                 (cl-incf project-current-calls)
+                 (error "project-current should not be called"))))
+      (should-error (ast-grep-project) :type 'error)
+      (should (zerop project-current-calls)))))
+
+(ert-deftest ast-grep-test-rewrite-project-refuses-remote-before-project-current ()
+  "`ast-grep-rewrite-project' fails before project.el inspects remote directories."
+  (let ((default-directory "/ssh:example:/repo/src/")
+        (project-current-calls 0))
+    (cl-letf (((symbol-function 'project-current)
+               (lambda (&rest _args)
+                 (cl-incf project-current-calls)
+                 (error "project-current should not be called"))))
+      (should-error (ast-grep-rewrite-project) :type 'error)
+      (should (zerop project-current-calls)))))
+
 ;;; End-to-end (require ast-grep binary)
 
 (ert-deftest ast-grep-test-end-to-end-sync ()

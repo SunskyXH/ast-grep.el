@@ -87,3 +87,6 @@ Customize the following variables:
 - ~ast-grep-executable~ - Path to ast-grep executable (default: "ast-grep")
 - ~ast-grep-debug~ - Enable debug output for troubleshooting (default: nil)
 - ~ast-grep-async-min-input~ - Minimum input length before triggering async search (default: 3)
+
+TRAMP directories are rejected before running ast-grep, since the
+local ast-grep executable cannot search remote file names directly.
