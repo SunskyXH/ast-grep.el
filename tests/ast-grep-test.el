@@ -279,6 +279,24 @@ async minibuffer hooks are not compatible with ivy."
                  (unless (memq feature '(counsel ivy)) t))))
       (should (eq 'sync (ast-grep--select-backend))))))
 
+(ert-deftest ast-grep-test-search-dispatch-does-not-route-returned-candidate ()
+  "`ast-grep-search' only dispatches; backends own candidate actions."
+  (let ((ast-grep-search-backend 'sync)
+        (backend-calls 0)
+        (goto-calls 0))
+    (cl-letf (((symbol-function 'ast-grep--executable-available-p)
+               (lambda () t))
+              ((symbol-function 'ast-grep--search-sync)
+               (lambda (_directory)
+                 (cl-incf backend-calls)
+                 "test.js:1:0:hit"))
+              ((symbol-function 'ast-grep--goto-match)
+               (lambda (_candidate)
+                 (cl-incf goto-calls))))
+      (ast-grep-search ast-grep-test--fixtures-dir)
+      (should (= 1 backend-calls))
+      (should (zerop goto-calls)))))
+
 (ert-deftest ast-grep-test-search-with-ivy-mode-uses-ivy-async ()
   "With ivy-mode active and counsel available, `ast-grep-search'
 must route to `ivy-read', not `consult--read' or the sync prompt."
@@ -287,6 +305,8 @@ must route to `ivy-read', not `consult--read' or the sync prompt."
          (selection (format "%s:5:2:console.log(name)" target))
          (consult-calls 0)
          (ivy-calls 0)
+         ivy-action
+         ivy-unwind
          (read-string-calls 0)
          (buffer-before (find-buffer-visiting target)))
     (cl-letf* ((ivy-mode t)
@@ -302,9 +322,12 @@ must route to `ivy-read', not `consult--read' or the sync prompt."
                   (cl-incf consult-calls)
                   selection))
                ((symbol-function 'ivy-read)
-                (lambda (&rest _args)
+                (lambda (&rest args)
                   (cl-incf ivy-calls)
-                  selection))
+                  (let ((plist (cddr args)))
+                    (setq ivy-action (plist-get plist :action)
+                          ivy-unwind (plist-get plist :unwind))
+                    (funcall ivy-action selection))))
                ((symbol-function 'read-string)
                 (lambda (&rest _args)
                   (cl-incf read-string-calls)
@@ -314,7 +337,12 @@ must route to `ivy-read', not `consult--read' or the sync prompt."
             (ast-grep-search ast-grep-test--fixtures-dir)
             (should (zerop consult-calls))
             (should (zerop read-string-calls))
-            (should (= 1 ivy-calls)))
+            (should (= 1 ivy-calls))
+            (should (eq ivy-action #'ast-grep--goto-match))
+            (should (eq ivy-unwind #'counsel-delete-process))
+            (should (equal (buffer-file-name) target))
+            (should (= (line-number-at-pos) 5))
+            (should (= (current-column) 2)))
         (unless buffer-before
           (when-let ((buf (find-buffer-visiting target)))
             (kill-buffer buf)))))))
@@ -326,7 +354,9 @@ must route to `ivy-read', not `consult--read' or the sync prompt."
         (selection "test.js:1:0:hit")
         (routed-selection nil)
         (consult-calls 0)
-        (ivy-calls 0))
+        (ivy-calls 0)
+        ivy-action
+        ivy-unwind)
     (cl-letf (((symbol-function 'require)
                (lambda (feature &optional _filename _noerror)
                  (cond
@@ -339,16 +369,47 @@ must route to `ivy-read', not `consult--read' or the sync prompt."
                  (cl-incf consult-calls)
                  (error "consult backend should not be used under ivy-mode")))
               ((symbol-function 'ivy-read)
-               (lambda (&rest _args)
+               (lambda (&rest args)
                  (cl-incf ivy-calls)
-                 selection))
+                 (let ((plist (cddr args)))
+                   (setq ivy-action (plist-get plist :action)
+                         ivy-unwind (plist-get plist :unwind))
+                   (funcall ivy-action selection))))
               ((symbol-function 'ast-grep--goto-match)
                (lambda (candidate)
                  (setq routed-selection candidate))))
       (ast-grep-search ast-grep-test--fixtures-dir)
       (should (zerop consult-calls))
       (should (= 1 ivy-calls))
+      (should (eq ivy-action #'ast-grep--goto-match))
+      (should (eq ivy-unwind #'counsel-delete-process))
       (should (equal routed-selection selection)))))
+
+(ert-deftest ast-grep-test-ivy-more-chars-respects-min-input ()
+  "The ivy placeholder uses `ast-grep-async-min-input'."
+  (let ((ast-grep-async-min-input 4))
+    (should (equal (ast-grep--ivy-more-chars "ab")
+                   '("" "2 chars more")))
+    (should-not (ast-grep--ivy-more-chars "abcd"))))
+
+(ert-deftest ast-grep-test-ivy-collection-starts-command-list ()
+  "The ivy collection starts counsel with an argv list, not shell text."
+  (let ((ast-grep-async-min-input 3)
+        (ast-grep-executable "ast-grep")
+        captured-command
+        captured-sentinel
+        captured-filter)
+    (cl-letf (((symbol-function 'counsel--async-command)
+               (lambda (command sentinel filter)
+                 (setq captured-command command
+                       captured-sentinel sentinel
+                       captured-filter filter))))
+      (funcall (ast-grep--ivy-collection "/dir") "abc")
+      (should (equal captured-command
+                     '("ast-grep" "run" "--pattern=abc"
+                       "--json=stream" "/dir")))
+      (should-not captured-sentinel)
+      (should (functionp captured-filter)))))
 
 (ert-deftest ast-grep-test-ivy-async-filter-transforms-json-to-display ()
   "The ivy async process filter turns ast-grep JSON into display lines

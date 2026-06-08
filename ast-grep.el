@@ -51,9 +51,9 @@
 (declare-function consult--lookup-member "consult")
 (declare-function consult--file-preview "consult")
 (declare-function ivy-read "ivy")
-(declare-function ivy-more-chars "ivy")
 (declare-function counsel--async-command "counsel")
 (declare-function counsel--async-filter "counsel")
+(declare-function counsel-delete-process "counsel")
 
 (defgroup ast-grep nil
   "Search code using ast-grep."
@@ -407,39 +407,44 @@ Modified buffers are left for the user to save with
     (lambda (items)
       (delq nil (mapcar #'ast-grep--parse-stream-line items))))))
 
-(defun ast-grep--search-async (directory)
+(defun ast-grep--search-consult (directory)
   "Search asynchronously using consult in DIRECTORY.
 The ast-grep pattern is typed in the minibuffer.  Results stream
 in as you type; type after `#' to narrow with `completing-read'."
   (let ((source (ast-grep--async-source directory)))
-    (consult--read
-     source
-     :prompt "ast-grep: "
-     :lookup #'consult--lookup-member
-     :state (ast-grep--state)
-     :category 'ast-grep
-     :history 'ast-grep-history
-     :require-match t)))
+    (when-let ((selection
+                (consult--read
+                 source
+                 :prompt "ast-grep: "
+                 :lookup #'consult--lookup-member
+                 :state (ast-grep--state)
+                 :category 'ast-grep
+                 :history 'ast-grep-history
+                 :require-match t)))
+      (ast-grep--goto-match selection))))
 
-(defun ast-grep--search-sync (pattern directory)
-  "Search synchronously using `completing-read' for PATTERN in DIRECTORY."
-  (let* ((output (ast-grep--run-command pattern directory))
+(defun ast-grep--search-sync (directory)
+  "Search synchronously using `completing-read' in DIRECTORY."
+  (let* ((pattern (read-string "ast-grep pattern: " nil 'ast-grep-history))
+         (output (ast-grep--run-command pattern directory))
          (candidates (ast-grep--parse-stream-output output)))
     (if candidates
-        (completing-read
-         (format "ast-grep [%s]: " pattern)
-         candidates nil t nil 'ast-grep-history)
+        (when-let ((selection
+                    (completing-read
+                     (format "ast-grep [%s]: " pattern)
+                     candidates nil t nil 'ast-grep-history)))
+          (ast-grep--goto-match selection))
       (progn
         (message "No matches found for pattern: %s" pattern)
         nil))))
 
 ;;; Ivy/counsel async functions (require ivy + counsel)
 
-(defvar ast-grep--ivy-search-directory nil
-  "Search directory captured for the in-flight ivy async session.
-Bound around the dynamic call to `ivy-read' in
-`ast-grep--search-ivy-async' so the collection function can see it
-on each keystroke without escaping into a closure.")
+(defun ast-grep--ivy-more-chars (input)
+  "Return ivy placeholder candidates when INPUT is too short."
+  (let ((remaining (- ast-grep-async-min-input (length input))))
+    (when (> remaining 0)
+      (list "" (format "%d chars more" remaining)))))
 
 (defun ast-grep--ivy-async-filter (process raw)
   "Filter PROCESS output RAW for the counsel/ivy async path.
@@ -459,33 +464,36 @@ the `file:line:col:text' display format, then forwards them to
          (concat (mapconcat #'identity lines "\n") "\n")
        ""))))
 
-(defun ast-grep--ivy-function (input)
-  "Dynamic collection function for the ivy async path.
-Spawns ast-grep for INPUT against `ast-grep--ivy-search-directory'
-once INPUT clears `ast-grep-async-min-input'; before that the
-ivy-more-chars placeholder keeps the minibuffer responsive."
-  (or (ivy-more-chars)
-      (when (>= (length input) ast-grep-async-min-input)
-        (counsel--async-command
-         (mapconcat #'shell-quote-argument
-                    (ast-grep--build-command
-                     input ast-grep--ivy-search-directory)
-                    " ")
-         nil
-         #'ast-grep--ivy-async-filter)
-        nil)))
+(defun ast-grep--ivy-collection (directory)
+  "Return a dynamic ivy collection function scoped to DIRECTORY."
+  (lambda (input)
+    (or (ast-grep--ivy-more-chars input)
+        (when (>= (length input) ast-grep-async-min-input)
+          (counsel--async-command
+           (ast-grep--build-command input directory)
+           nil
+           #'ast-grep--ivy-async-filter)
+          nil))))
 
-(defun ast-grep--search-ivy-async (directory)
+(defun ast-grep--search-ivy (directory)
   "Search asynchronously using counsel/ivy in DIRECTORY.
 Mirrors the consult path's UX: type the ast-grep pattern directly
 in the minibuffer and watch results stream in."
-  (let ((ast-grep--ivy-search-directory directory))
-    (ivy-read "ast-grep: "
-              #'ast-grep--ivy-function
-              :dynamic-collection t
-              :history 'ast-grep-history
-              :require-match t
-              :caller 'ast-grep-search)))
+  (ivy-read "ast-grep: "
+            (ast-grep--ivy-collection directory)
+            :dynamic-collection t
+            :action #'ast-grep--goto-match
+            :unwind #'counsel-delete-process
+            :history 'ast-grep-history
+            :require-match t
+            :caller 'ast-grep-search))
+
+(defun ast-grep--run-search-backend (backend directory)
+  "Run BACKEND for ast-grep search in DIRECTORY."
+  (pcase backend
+    ('consult (ast-grep--search-consult directory))
+    ('ivy (ast-grep--search-ivy directory))
+    ('sync (ast-grep--search-sync directory))))
 
 ;;; Interactive commands
 
@@ -508,15 +516,9 @@ Example patterns:
   (unless (ast-grep--executable-available-p)
     (error "The ast-grep executable not found. Please install ast-grep"))
   (let ((search-dir (or directory default-directory)))
-    (when-let ((selection
-                (pcase (ast-grep--select-backend)
-                  ('consult (ast-grep--search-async search-dir))
-                  ('ivy (ast-grep--search-ivy-async search-dir))
-                  ('sync (ast-grep--search-sync
-                          (read-string "ast-grep pattern: " nil
-                                       'ast-grep-history)
-                          search-dir)))))
-      (ast-grep--goto-match selection))))
+    (ast-grep--run-search-backend
+     (ast-grep--select-backend)
+     search-dir)))
 
 ;;;###autoload
 (defun ast-grep-project ()
