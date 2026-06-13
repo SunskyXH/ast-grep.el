@@ -16,14 +16,25 @@ An Emacs interface to [[https://github.com/ast-grep/ast-grep][ast-grep]], a CLI 
 - Project-wide search support
 - Integration with completing-read frameworks (Vertico, etc.)
 - Streaming JSON parsing for efficient processing
-- Async search with live results when consult is available
+- Async search with live results via consult, or via counsel/ivy when ~ivy-mode~ is active
 - Interactive rewrite across files (~project-query-replace-regexp~ style)
 
 ** Requirements
 
 - Emacs 28.1 or later
 - [[https://github.com/ast-grep/ast-grep][ast-grep]] CLI tool installed and available in PATH
-- Optional: [[https://github.com/minad/consult][consult]] for live async search results
+- Optional, for live async search:
+  - [[https://github.com/minad/consult][consult]] (pairs with Vertico, Selectrum, etc.), or
+  - [[https://github.com/abo-abo/swiper][ivy + counsel]] when ~ivy-mode~ is active
+
+*** Async Backend Support
+
+| Backend selector | Runtime dependency | Selection behavior | Eask sandbox |
+|------------------+--------------------+--------------------+--------------|
+| ~auto~           | Optional consult or ivy/counsel | Uses ivy/counsel when ~ivy-mode~ is active and available; otherwise consult when available; otherwise sync | ~eask run script test:full~ |
+| ~sync~           | None | Uses synchronous ~completing-read~ candidates | ~eask run script test:sync~ |
+| ~consult~        | consult (and its dependencies) | Uses consult async search, falling back to sync if consult is unavailable | ~eask run script test:consult~ |
+| ~ivy~            | ivy + counsel | Uses counsel/ivy async search, falling back to sync if ivy/counsel is unavailable | ~eask run script test:ivy~ |
 
 ** Installation
 
@@ -87,3 +98,18 @@ Customize the following variables:
 - ~ast-grep-executable~ - Path to ast-grep executable (default: "ast-grep")
 - ~ast-grep-debug~ - Enable debug output for troubleshooting (default: nil)
 - ~ast-grep-async-min-input~ - Minimum input length before triggering async search (default: 3)
+- ~ast-grep-search-backend~ - Backend for ~ast-grep-search~ (default: ~auto~; accepts ~consult~, ~ivy~, or ~sync~). In ~auto~, active ~ivy-mode~ uses counsel/ivy when available, otherwise consult is used when available, with synchronous ~completing-read~ as the fallback.
+
+** Development
+
+This repository uses Eask to keep optional async backends isolated during
+tests. The sync sandbox has no optional completion dependency; consult
+and ivy sandboxes install only the backend they exercise.
+
+#+begin_src bash
+eask run script compile
+eask run script test:sync
+eask run script test:consult
+eask run script test:ivy
+eask run script test:full
+#+end_src

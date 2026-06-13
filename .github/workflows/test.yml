@@ -8,24 +8,42 @@ on:
 
 jobs:
   test:
+    name: Emacs ${{ matrix.emacs-version }} / ${{ matrix.backend }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        emacs-version:
-          - "28.2"
-          - "29.4"
-          - "30.1"
         include:
-          # consult requires Emacs 29.1+, so it is only installed for
-          # the newer matrix entries. On 28.2 the consult-dependent
-          # tests skip via `skip-unless` and the rest still run.
+          - emacs-version: "28.2"
+            backend: sync
+            eask-script: test:sync
+          - emacs-version: "28.2"
+            backend: ivy
+            eask-script: test:ivy
           - emacs-version: "29.4"
-            install-consult: true
-            extra-load-path: "-L /tmp/consult -L /tmp/compat"
+            backend: sync
+            eask-script: test:sync
+          - emacs-version: "29.4"
+            backend: consult
+            eask-script: test:consult
+          - emacs-version: "29.4"
+            backend: ivy
+            eask-script: test:ivy
+          - emacs-version: "29.4"
+            backend: full
+            eask-script: test:full
           - emacs-version: "30.1"
-            install-consult: true
-            extra-load-path: "-L /tmp/consult -L /tmp/compat"
+            backend: sync
+            eask-script: test:sync
+          - emacs-version: "30.1"
+            backend: consult
+            eask-script: test:consult
+          - emacs-version: "30.1"
+            backend: ivy
+            eask-script: test:ivy
+          - emacs-version: "30.1"
+            backend: full
+            eask-script: test:full
 
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +53,11 @@ jobs:
         with:
           version: ${{ matrix.emacs-version }}
 
+      - name: Set up Eask
+        uses: emacs-eask/setup-eask@master
+        with:
+          version: "0.12.9"
+
       - name: Install Nix
         uses: cachix/install-nix-action@v27
 
@@ -43,20 +66,8 @@ jobs:
           nix profile install nixpkgs#ast-grep
           ast-grep --version
 
-      - name: Install compat and consult
-        if: matrix.install-consult
-        run: |
-          git clone --depth=1 https://github.com/emacs-compat/compat.git /tmp/compat
-          git clone --depth=1 https://github.com/minad/consult.git /tmp/consult
-
       - name: Byte-compile
-        run: |
-          emacs -batch -L . ${{ matrix.extra-load-path }} \
-            --eval "(setq byte-compile-error-on-warn t)" \
-            -f batch-byte-compile ast-grep.el
+        run: eask run script compile
 
-      - name: Run tests
-        run: |
-          emacs -batch -L . ${{ matrix.extra-load-path }} \
-            -l ast-grep.el -l tests/ast-grep-test.el \
-            -f ert-run-tests-batch-and-exit
+      - name: Run backend tests
+        run: eask run script ${{ matrix.eask-script }}
