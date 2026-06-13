@@ -29,12 +29,12 @@ An Emacs interface to [[https://github.com/ast-grep/ast-grep][ast-grep]], a CLI 
 
 *** Async Backend Support
 
-| Backend selector | Runtime dependency | Selection behavior | Eask sandbox |
-|------------------+--------------------+--------------------+--------------|
-| ~auto~           | Optional consult or ivy/counsel | Uses ivy/counsel when ~ivy-mode~ is active and available; otherwise consult when available; otherwise sync | ~eask run script test:full~ |
-| ~sync~           | None | Uses synchronous ~completing-read~ candidates | ~eask run script test:sync~ |
-| ~consult~        | consult (and its dependencies) | Uses consult async search, falling back to sync if consult is unavailable | ~eask run script test:consult~ |
-| ~ivy~            | ivy + counsel | Uses counsel/ivy async search, falling back to sync if ivy/counsel is unavailable | ~eask run script test:ivy~ |
+| Backend selector | Emacs version | Runtime dependency | Selection behavior | Eask sandbox |
+|------------------+---------------+--------------------+--------------------+--------------|
+| ~auto~           | 28.1+, consult path requires 29.1+ | Optional consult or ivy/counsel | Uses ivy/counsel when ~ivy-mode~ is active and available; otherwise consult when available; otherwise sync | ~eask run script test:full~ |
+| ~sync~           | 28.1+ | None | Uses synchronous ~completing-read~ candidates | ~eask run script test:sync~ |
+| ~consult~        | 29.1+ | consult (and its dependencies) | Uses consult async search, falling back to sync if consult is unavailable | ~eask run script test:consult~ |
+| ~ivy~            | 28.1+ | ivy + counsel | Uses counsel/ivy async search, falling back to sync if ivy/counsel is unavailable | ~eask run script test:ivy~ |
 
 ** Installation
 

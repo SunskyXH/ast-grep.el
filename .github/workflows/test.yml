@@ -20,6 +20,8 @@ jobs:
           - emacs-version: "28.2"
             backend: ivy
             eask-script: test:ivy
+          # Consult currently requires Emacs 29.1+, so consult/full jobs
+          # intentionally start at 29.4.
           - emacs-version: "29.4"
             backend: sync
             eask-script: test:sync
