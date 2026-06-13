@@ -44,6 +44,54 @@
       (should (functionp captured-filter))
       (should (equal captured-name ast-grep--ivy-process-name)))))
 
+(ert-deftest ast-grep-ivy-test-ivy-available-in-backend-sandbox ()
+  "Ivy backend sandboxes must load real ivy and counsel."
+  (skip-unless (member (getenv "AST_GREP_TEST_BACKEND") '("ivy" "full")))
+  (should ast-grep-test--ivy-available)
+  (should (ast-grep--ivy-available-p)))
+
+(ert-deftest ast-grep-ivy-test-real-counsel-async-command-contract ()
+  "The ivy sandbox exercises real counsel async filtering and cleanup."
+  (skip-unless ast-grep-test--ivy-available)
+  (let* ((fake-executable
+          (make-temp-file
+           "ast-grep-fake-" nil nil
+           (concat
+            "#!/bin/sh\n"
+            "printf '%s\\n' '{\"file\":\"fake.js\",\"range\":{\"start\":{\"line\":0,\"column\":0}},\"text\":\"x:y\"}'\n"
+            "sleep 1\n")))
+         (ast-grep-async-min-input 3)
+         (ast-grep-executable fake-executable)
+         (counsel-async-command-delay 0)
+         (ast-grep--ivy-generation 0)
+         (display "fake.js:1:0:x:y")
+         proc
+         match)
+    (set-file-modes fake-executable #o700)
+    (unwind-protect
+        (progn
+          (ast-grep--reset-candidate-table)
+          (funcall (ast-grep--ivy-collection default-directory) "abc")
+          (let ((deadline (+ (float-time) 2.0)))
+            (while (and (not (setq proc (get-process ast-grep--ivy-process-name)))
+                        (< (float-time) deadline))
+              (accept-process-output nil 0.02))
+            (should (processp proc))
+            (should (equal (process-name proc) ast-grep--ivy-process-name)))
+          (let ((deadline (+ (float-time) 2.0)))
+            (while (and (not (setq match (gethash display
+                                                   ast-grep--candidate-table)))
+                        (< (float-time) deadline))
+              (accept-process-output nil 0.02)))
+          (should match)
+          (should (eq (ast-grep--candidate-match display) match))
+          (should (equal (plist-get match :text) "x:y"))
+          (ast-grep--ivy-stop-process)
+          (should-not (get-process ast-grep--ivy-process-name)))
+      (ast-grep--ivy-stop-process)
+      (when (file-exists-p fake-executable)
+        (delete-file fake-executable)))))
+
 (ert-deftest ast-grep-ivy-test-search-wires-action-and-unwind ()
   "`ast-grep--search-ivy' wires candidate action and process cleanup."
   (let* ((selection (ast-grep--format-candidate
@@ -122,15 +170,19 @@
         (cl-letf (((symbol-function 'counsel--async-filter)
                    (lambda (_process str)
                      (setq captured (concat captured str)))))
+          (ast-grep--reset-candidate-table)
           (ast-grep--ivy-async-filter
            proc
            (concat "{\"file\":\"a:b.js\",\"range\":{\"start\":{\"line\":0,\"column\":0}},\"text\":\"x:y\"}\n"
                    "{\"file\":\"b.js\",\"range\":{\"start\":{\"line\":2,\"column\":4}},\"text\":\"y\"}\n"))
           (should (equal captured "a:b.js:1:0:x:y\nb.js:3:4:y\n"))
-          (let ((match (ast-grep--candidate-match "a:b.js:1:0:x:y")))
+          (let* ((display (car (split-string captured "\n" t)))
+                 (match (ast-grep--candidate-match
+                         (substring-no-properties display))))
             (should (equal (plist-get match :file) "a:b.js"))
             (should (= (plist-get match :start-line) 0))
-            (should (= (plist-get match :start-column) 0))))
+            (should (= (plist-get match :start-column) 0))
+            (should (equal (plist-get match :text) "x:y"))))
       (when (process-live-p proc) (delete-process proc)))))
 
 (ert-deftest ast-grep-ivy-test-ivy-async-filter-ignores-stale-generation ()

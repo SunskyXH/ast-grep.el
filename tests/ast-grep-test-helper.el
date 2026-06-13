@@ -17,6 +17,7 @@
 (defvar ivy-mode nil)
 (defvar consult-async-input-throttle)
 (defvar consult-async-input-debounce)
+(defvar counsel-async-command-delay)
 (defvar vc-handled-backends)
 
 ;; Tests open fixture and temporary files in batch mode; VC refresh hooks add
@@ -39,6 +40,11 @@
 (defvar ast-grep-test--consult-available
   (require 'consult nil t)
   "Non-nil if consult is loadable during this test run.")
+
+(defvar ast-grep-test--ivy-available
+  (and (require 'ivy nil t)
+       (require 'counsel nil t))
+  "Non-nil if ivy and counsel are loadable during this test run.")
 
 (defun ast-grep-test--drive-async (source pattern &optional timeout)
   "Drive consult async SOURCE with PATTERN, return collected candidates.

@@ -109,8 +109,11 @@ When GENERATION is non-nil, output from stale processes is ignored."
 (defun ast-grep--search-ivy (directory)
   "Search asynchronously using counsel/ivy in DIRECTORY.
 The ivy backend is isolated from consult because ivy owns minibuffer
-state differently.  Candidate actions look up structured match data in
-`ast-grep--candidate-table' and never parse display strings."
+state differently.  The async filter registers structured match data in
+`ast-grep--candidate-table' before forwarding plain display strings to
+counsel.  Candidate actions first recover data from that registry, then
+fall back to the shared legacy display-string parser when registry
+context is unavailable."
   (ast-grep--reset-candidate-table)
   (ivy-read "ast-grep: "
             (ast-grep--ivy-collection directory)
