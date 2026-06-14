@@ -78,6 +78,7 @@ Add to your ~packages.el~:
 - ~ast-grep-search~ - Search for patterns in current directory
 - ~ast-grep-project~ - Search for patterns in current project
 - ~ast-grep-directory~ - Search for patterns in specified directory
+- ~ast-grep-describe-backend~ - Show the configured backend selector and resolved backend
 - ~ast-grep-rewrite~ - Interactive search-and-rewrite in current directory
 - ~ast-grep-rewrite-project~ - Interactive search-and-rewrite across the project
 

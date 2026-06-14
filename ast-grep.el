@@ -109,7 +109,24 @@ and ivy's minibuffer management are not compatible."
      (ast-grep--search-ivy directory))
     ('sync (ast-grep--search-sync directory))))
 
+(defun ast-grep--backend-description ()
+  "Return a human-readable description of the active search backend."
+  (let ((resolved (ast-grep--select-backend)))
+    (if (eq ast-grep-search-backend resolved)
+        (format "ast-grep backend: %s" resolved)
+      (format "ast-grep backend: %s -> %s"
+              ast-grep-search-backend
+              resolved))))
+
 ;;; Interactive commands
+
+;;;###autoload
+(defun ast-grep-describe-backend ()
+  "Display the configured and resolved backend for `ast-grep-search'."
+  (interactive)
+  (let ((description (ast-grep--backend-description)))
+    (message "%s" description)
+    description))
 
 ;;;###autoload
 (defun ast-grep-search (&optional directory)

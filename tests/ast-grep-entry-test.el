@@ -67,6 +67,37 @@
                (lambda () nil)))
       (should (eq 'sync (ast-grep--select-backend))))))
 
+(ert-deftest ast-grep-entry-test-backend-description-auto-resolves-backend ()
+  "`ast-grep--backend-description' reports auto and the resolved backend."
+  (let ((ast-grep-search-backend 'auto)
+        (ivy-mode t))
+    (cl-letf (((symbol-function 'ast-grep--ivy-backend-available-p)
+               (lambda () t))
+              ((symbol-function 'ast-grep--consult-backend-available-p)
+               (lambda () t)))
+      (should (equal (ast-grep--backend-description)
+                     "ast-grep backend: auto -> ivy")))))
+
+(ert-deftest ast-grep-entry-test-backend-description-forced-fallback ()
+  "`ast-grep--backend-description' reports forced backends that fall back."
+  (let ((ast-grep-search-backend 'consult))
+    (cl-letf (((symbol-function 'ast-grep--consult-backend-available-p)
+               (lambda () nil)))
+      (should (equal (ast-grep--backend-description)
+                     "ast-grep backend: consult -> sync")))))
+
+(ert-deftest ast-grep-entry-test-describe-backend-message ()
+  "`ast-grep-describe-backend' messages and returns the backend description."
+  (let ((ast-grep-search-backend 'sync)
+        captured-message)
+    (cl-letf (((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (setq captured-message (apply #'format format-string args)))))
+      (should (equal (ast-grep-describe-backend)
+                     "ast-grep backend: sync"))
+      (should (equal captured-message
+                     "ast-grep backend: sync")))))
+
 (ert-deftest ast-grep-entry-test-search-dispatch-does-not-route-returned-candidate ()
   "`ast-grep-search' only dispatches; backends own candidate actions."
   (let ((ast-grep-search-backend 'sync)
