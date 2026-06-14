@@ -99,34 +99,54 @@
                            :start-line 4
                            :start-column 2
                            :text "console.log(name)")))
-         (ivy-calls 0)
-         ivy-action
-         ivy-unwind
-         (buffer-before (find-buffer-visiting ast-grep-test--sample-file))
-         (stopped 0))
+        (ivy-calls 0)
+        ivy-action
+        ivy-update-fn
+        ivy-unwind
+        (buffer-before (find-buffer-visiting ast-grep-test--sample-file))
+        (pulse-calls 0)
+        (stopped 0))
     (cl-letf (((symbol-function 'ivy-read)
                (lambda (&rest args)
                  (cl-incf ivy-calls)
                  (let ((plist (cddr args)))
                    (setq ivy-action (plist-get plist :action)
+                         ivy-update-fn (plist-get plist :update-fn)
                          ivy-unwind (plist-get plist :unwind))
                    (funcall ivy-action selection))))
               ((symbol-function 'ast-grep--ivy-stop-process)
-               (lambda () (cl-incf stopped))))
+               (lambda () (cl-incf stopped)))
+              ((symbol-function 'pulse-momentary-highlight-one-line)
+               (lambda (&rest _) (cl-incf pulse-calls))))
       (unwind-protect
           (progn
             (ast-grep--search-ivy ast-grep-test--fixtures-dir)
             (should (= 1 ivy-calls))
             (should (functionp ivy-action))
+            (should (eq ivy-update-fn 'auto))
             (should (functionp ivy-unwind))
             (funcall ivy-unwind)
             (should (= 1 stopped))
             (should (equal (buffer-file-name) ast-grep-test--sample-file))
             (should (= (line-number-at-pos) 5))
-            (should (= (current-column) 2)))
+            (should (= (current-column) 2))
+            (should (= pulse-calls 1)))
         (unless buffer-before
           (when-let ((buf (find-buffer-visiting ast-grep-test--sample-file)))
             (kill-buffer buf)))))))
+
+(ert-deftest ast-grep-ivy-test-ivy-action-ignores-non-candidates ()
+  "`ast-grep--ivy-action' ignores placeholder text and unmatched strings."
+  (let ((find-file-calls 0)
+        (pulse-calls 0))
+    (cl-letf (((symbol-function 'find-file)
+               (lambda (&rest _) (cl-incf find-file-calls)))
+              ((symbol-function 'pulse-momentary-highlight-one-line)
+               (lambda (&rest _) (cl-incf pulse-calls))))
+      (should-not (ast-grep--ivy-action "1 chars more"))
+      (should-not (ast-grep--ivy-action "not a candidate"))
+      (should (zerop find-file-calls))
+      (should (zerop pulse-calls)))))
 
 (ert-deftest ast-grep-ivy-test-ivy-collection-short-input-stops-process ()
   "Short ivy input clears stale matches and stops the previous process."

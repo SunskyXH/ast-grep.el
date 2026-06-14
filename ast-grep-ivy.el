@@ -21,6 +21,7 @@
 (declare-function counsel--async-command "counsel")
 (declare-function counsel--async-filter "counsel")
 (declare-function counsel-delete-process "counsel")
+(declare-function pulse-momentary-highlight-one-line "pulse")
 (defvar counsel--async-timer nil
   "Timer used internally by counsel's async command debounce.")
 
@@ -105,6 +106,12 @@ When GENERATION is non-nil, output from stale processes is ignored."
            (ast-grep--ivy-async-filter process raw generation)))
         nil))))
 
+(defun ast-grep--ivy-action (candidate)
+  "Preview or visit CANDIDATE for the counsel/ivy backend."
+  (when (ast-grep--candidate-match candidate)
+    (ast-grep--goto-match candidate)
+    (pulse-momentary-highlight-one-line (point))))
+
 (defun ast-grep--search-ivy (directory)
   "Search asynchronously using counsel/ivy in DIRECTORY.
 The ivy backend is isolated from consult because ivy owns minibuffer
@@ -117,9 +124,8 @@ context is unavailable."
   (ivy-read "ast-grep: "
             (ast-grep--ivy-collection directory)
             :dynamic-collection t
-            :action (lambda (candidate)
-                      (when (ast-grep--candidate-match candidate)
-                        (ast-grep--goto-match candidate)))
+            :action #'ast-grep--ivy-action
+            :update-fn 'auto
             :unwind (lambda ()
                       (ast-grep--ivy-next-generation)
                       (ast-grep--ivy-stop-process))
