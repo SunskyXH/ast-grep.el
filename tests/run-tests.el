@@ -9,6 +9,8 @@
 
 ;;; Code:
 
+(setq load-prefer-newer t)
+
 (require 'ert)
 (require 'ast-grep-test-helper)
 

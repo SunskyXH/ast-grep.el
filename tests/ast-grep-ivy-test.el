@@ -27,7 +27,7 @@
         captured-filter
         captured-name)
     (cl-letf (((symbol-function 'counsel--async-command)
-               (lambda (command sentinel filter name)
+               (lambda (command sentinel filter &optional name)
                  (setq captured-command command
                        captured-sentinel sentinel
                        captured-filter filter
@@ -42,7 +42,7 @@
                         "--json=stream" "/dir"))))
       (should-not captured-sentinel)
       (should (functionp captured-filter))
-      (should (equal captured-name ast-grep--ivy-process-name)))))
+      (should-not captured-name))))
 
 (ert-deftest ast-grep-ivy-test-ivy-available-in-backend-sandbox ()
   "Ivy backend sandboxes must load real ivy and counsel."
@@ -131,6 +131,7 @@
 (ert-deftest ast-grep-ivy-test-ivy-collection-short-input-stops-process ()
   "Short ivy input clears stale matches and stops the previous process."
   (let ((ast-grep-async-min-input 3)
+        delete-called
         deleted-name
         (candidate (ast-grep--format-candidate
                     (list :file "stale.js"
@@ -139,10 +140,13 @@
                           :text "stale"))))
     (should (ast-grep--candidate-match candidate))
     (cl-letf (((symbol-function 'counsel-delete-process)
-               (lambda (name) (setq deleted-name name))))
+               (lambda (&optional name)
+                 (setq delete-called t
+                       deleted-name name))))
       (should (equal (funcall (ast-grep--ivy-collection "/dir") "ab")
                      '("" "1 chars more")))
-      (should (equal deleted-name ast-grep--ivy-process-name))
+      (should delete-called)
+      (should-not deleted-name)
       (should-not (gethash (substring-no-properties candidate)
                            ast-grep--candidate-table)))))
 
@@ -150,14 +154,18 @@
   "Short ivy input cancels counsel's delayed async command timer."
   (let ((ast-grep-async-min-input 3)
         (timer (run-with-timer 3600 nil #'ignore))
+        delete-called
         deleted-name)
     (unwind-protect
         (let ((counsel--async-timer timer))
           (cl-letf (((symbol-function 'counsel-delete-process)
-                     (lambda (name) (setq deleted-name name))))
+                     (lambda (&optional name)
+                       (setq delete-called t
+                             deleted-name name))))
             (should (equal (funcall (ast-grep--ivy-collection "/dir") "ab")
                            '("" "1 chars more")))
-            (should (equal deleted-name ast-grep--ivy-process-name))
+            (should delete-called)
+            (should-not deleted-name)
             (should-not counsel--async-timer)))
       (when (timerp timer)
         (cancel-timer timer)))))

@@ -24,8 +24,8 @@
 (defvar counsel--async-timer nil
   "Timer used internally by counsel's async command debounce.")
 
-(defconst ast-grep--ivy-process-name " *ast-grep-counsel*"
-  "Process buffer name used by the counsel/ivy backend.")
+(defconst ast-grep--ivy-process-name " *counsel*"
+  "Default process buffer name used by counsel async backends.")
 
 (defvar ast-grep--ivy-generation 0
   "Monotonic generation counter for the active ivy search session.")
@@ -58,7 +58,7 @@
 (defun ast-grep--ivy-stop-process ()
   "Stop any pending or running counsel process for ast-grep."
   (ast-grep--ivy-cancel-pending-command)
-  (counsel-delete-process ast-grep--ivy-process-name))
+  (counsel-delete-process))
 
 (defun ast-grep--ivy-current-process-p (process generation)
   "Return non-nil if PROCESS still belongs to ivy search GENERATION."
@@ -102,8 +102,7 @@ When GENERATION is non-nil, output from stale processes is ignored."
           (ast-grep--build-command input directory))
          nil
          (lambda (process raw)
-           (ast-grep--ivy-async-filter process raw generation))
-         ast-grep--ivy-process-name)
+           (ast-grep--ivy-async-filter process raw generation)))
         nil))))
 
 (defun ast-grep--search-ivy (directory)
