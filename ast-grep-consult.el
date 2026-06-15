@@ -74,6 +74,10 @@ in as you type; type after `#' to narrow with `completing-read'."
                  :prompt "ast-grep: "
                  :lookup #'consult--lookup-member
                  :state (ast-grep--state)
+                 :annotate (lambda (cand)
+                             (list cand
+                                   (ast-grep--candidate-icon-prefix cand)
+                                   ""))
                  :category 'ast-grep
                  :history 'ast-grep-history
                  :require-match t)))

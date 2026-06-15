@@ -25,7 +25,8 @@
         (when-let ((selection
                     (completing-read
                      (format "ast-grep [%s]: " pattern)
-                     candidates nil t nil 'ast-grep-history)))
+                     (ast-grep--completion-table candidates)
+                     nil t nil 'ast-grep-history)))
           (ast-grep--goto-match selection))
       (progn
         (message "No matches found for pattern: %s" pattern)

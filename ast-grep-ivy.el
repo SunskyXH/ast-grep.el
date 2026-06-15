@@ -18,6 +18,7 @@
 (require 'ast-grep-core)
 
 (declare-function ivy-read "ivy")
+(declare-function ivy-set-display-transformer "ivy")
 (declare-function counsel--async-command "counsel")
 (declare-function counsel--async-filter "counsel")
 (declare-function counsel-delete-process "counsel")
@@ -85,8 +86,7 @@ When GENERATION is non-nil, output from stale processes is ignored."
       (when lines
         (counsel--async-filter
          process
-         ;; Keep text properties so nerd-icons `display' prefixes survive.
-         (concat (mapconcat #'identity lines "\n") "\n"))))))
+         (concat (mapconcat #'substring-no-properties lines "\n") "\n"))))))
 
 (defun ast-grep--ivy-collection (directory)
   "Return a dynamic ivy collection function scoped to DIRECTORY."
@@ -113,6 +113,12 @@ When GENERATION is non-nil, output from stale processes is ignored."
     (ast-grep--goto-match candidate)
     (pulse-momentary-highlight-one-line (point))))
 
+(defun ast-grep--ivy-display-transformer (candidate)
+  "Prefix CANDIDATE with its nerd-icons file icon for ivy display only.
+The underlying CANDIDATE string is left untouched, so ivy's own
+matching and the candidate action keep operating on the plain text."
+  (concat (ast-grep--candidate-icon-prefix candidate) candidate))
+
 (defun ast-grep--search-ivy (directory)
   "Search asynchronously using counsel/ivy in DIRECTORY.
 The ivy backend is isolated from consult because ivy owns minibuffer
@@ -122,6 +128,8 @@ counsel.  Candidate actions first recover data from that registry, then
 fall back to the shared legacy display-string parser when registry
 context is unavailable."
   (ast-grep--reset-candidate-table)
+  (ivy-set-display-transformer 'ast-grep-search
+                               #'ast-grep--ivy-display-transformer)
   (ivy-read "ast-grep: "
             (ast-grep--ivy-collection directory)
             :dynamic-collection t

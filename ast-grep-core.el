@@ -179,39 +179,44 @@ The optional nerd-icons package is probed at most once per
 
 (declare-function nerd-icons-icon-for-file "nerd-icons")
 
-(defun ast-grep--candidate-icon-display (display file)
-  "Return DISPLAY with an optional nerd-icons prefix for FILE.
-Only the icon placeholder uses a `display' property so ivy/consult can
-still decorate the candidate text with match faces."
-  (if (ast-grep--nerd-icons-available-p)
-      (concat (propertize " "
-                          'display (concat (nerd-icons-icon-for-file file) " ")
-                          'rear-nonsticky t)
-              display)
-    display))
+(defun ast-grep--candidate-icon-prefix (candidate)
+  "Return a nerd-icons display prefix for CANDIDATE, or an empty string.
+The prefix is rendered by the completion UI (an affixation function or
+an ivy display transformer), so it never becomes part of the candidate
+string.  Keeping the candidate body untouched preserves prefix-style
+completion filtering and the match-face highlighting backends add."
+  (if-let* (((ast-grep--nerd-icons-available-p))
+            (match (ast-grep--candidate-match candidate))
+            (file (plist-get match :file)))
+      (concat (nerd-icons-icon-for-file file) " ")
+    ""))
 
-(defun ast-grep--candidate-lookup-key (candidate)
-  "Return the hash-table lookup key for plain-text CANDIDATE."
-  (if (and (not (zerop (length candidate)))
-           (eq (aref candidate 0) ?\s))
-      (substring candidate 1)
-    candidate))
+(defun ast-grep--affixation (candidates)
+  "Affixation function prefixing each of CANDIDATES with its file icon."
+  (mapcar (lambda (candidate)
+            (list candidate (ast-grep--candidate-icon-prefix candidate) ""))
+          candidates))
+
+(defun ast-grep--completion-table (candidates)
+  "Return a completion table over CANDIDATES that adds nerd-icons affixes."
+  (lambda (string predicate action)
+    (if (eq action 'metadata)
+        '(metadata (affixation-function . ast-grep--affixation))
+      (complete-with-action action candidates string predicate))))
 
 (defun ast-grep--format-candidate (match)
   "Return a display candidate for MATCH and register its structured data."
-  (let* ((file (plist-get match :file))
-         (text (ast-grep--candidate-display-text (plist-get match :text)))
+  (let* ((text (ast-grep--candidate-display-text (plist-get match :text)))
          (display (format "%s:%d:%d:%s"
-                          file
+                          (plist-get match :file)
                           (1+ (plist-get match :start-line))
                           (plist-get match :start-column)
-                          text))
-         (candidate (ast-grep--candidate-icon-display display file)))
+                          text)))
     (puthash display match ast-grep--candidate-table)
-    (add-text-properties 0 (length candidate)
+    (add-text-properties 0 (length display)
                          (list ast-grep--match-property match)
-                         candidate)
-    candidate))
+                         display)
+    display))
 
 (defun ast-grep--legacy-candidate-match (candidate)
   "Parse legacy string CANDIDATE into a match plist."
@@ -231,14 +236,9 @@ that candidates survive backends that strip text properties."
    ((and (consp candidate) (plist-get candidate :file))
     candidate)
    ((stringp candidate)
-    (let ((plain (substring-no-properties candidate)))
-      (or (get-text-property 0 ast-grep--match-property candidate)
-          (gethash plain ast-grep--candidate-table)
-          (gethash (ast-grep--candidate-lookup-key plain)
-                   ast-grep--candidate-table)
-          (ast-grep--legacy-candidate-match plain)
-          (ast-grep--legacy-candidate-match
-           (ast-grep--candidate-lookup-key plain)))))))
+    (or (get-text-property 0 ast-grep--match-property candidate)
+        (gethash (substring-no-properties candidate) ast-grep--candidate-table)
+        (ast-grep--legacy-candidate-match candidate)))))
 
 (defun ast-grep--goto-line-column (line column)
   "Move point to 0-based LINE and character-index COLUMN.
