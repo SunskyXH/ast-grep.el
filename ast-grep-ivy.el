@@ -85,7 +85,8 @@ When GENERATION is non-nil, output from stale processes is ignored."
       (when lines
         (counsel--async-filter
          process
-         (concat (mapconcat #'substring-no-properties lines "\n") "\n"))))))
+         ;; Keep text properties so nerd-icons `display' prefixes survive.
+         (concat (mapconcat #'identity lines "\n") "\n"))))))
 
 (defun ast-grep--ivy-collection (directory)
   "Return a dynamic ivy collection function scoped to DIRECTORY."
