@@ -75,6 +75,24 @@
                  (substring-no-properties candidate))
                 match))))
 
+(ert-deftest ast-grep-core-test-format-candidate-uses-nerd-icons-display ()
+  "When nerd-icons is available, candidates keep plain text but gain a display icon."
+  (let* ((match (list :file "a.js"
+                      :start-line 0
+                      :start-column 0
+                      :text "hit"))
+         (display "a.js:1:0:hit")
+         (icon "js-icon"))
+    (let ((ast-grep-use-nerd-icons t))
+      (cl-letf (((symbol-function 'ast-grep--nerd-icons-available-p) (lambda () t))
+                 ((symbol-function 'nerd-icons-icon-for-file)
+                  (lambda (file) (propertize icon 'face 'nerd-icons-js))))
+        (let ((candidate (ast-grep--format-candidate match)))
+          (should (equal candidate display))
+          (should (equal (get-text-property 0 'display candidate)
+                        (concat icon " " display)))
+          (should (eq (ast-grep--candidate-match candidate) match)))))))
+
 (ert-deftest ast-grep-core-test-parse-stream-output ()
   "Test parsing of multi-line streaming output, skipping malformed lines."
   (let ((output (concat "{\"file\":\"a.js\",\"range\":{\"start\":{\"line\":0,\"column\":0}},\"text\":\"x\"}\n"

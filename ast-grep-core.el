@@ -39,6 +39,12 @@ the command being executed, working directory, and raw output."
   :type 'integer
   :group 'ast-grep)
 
+(defcustom ast-grep-use-nerd-icons t
+  "When non-nil, prefix search candidates with nerd-icons file icons.
+Requires the optional nerd-icons package."
+  :type 'boolean
+  :group 'ast-grep)
+
 (defvar ast-grep-history nil
   "History list for ast-grep searches.")
 
@@ -155,19 +161,39 @@ that includes both stdout and stderr when available."
   (string-trim
    (replace-regexp-in-string "[\r\n]+" " " (or text ""))))
 
+(defun ast-grep--nerd-icons-available-p ()
+  "Return non-nil when nerd-icons file icons can be rendered."
+  (and ast-grep-use-nerd-icons
+       (require 'nerd-icons nil t)
+       (fboundp 'nerd-icons-icon-for-file)))
+
+(declare-function nerd-icons-icon-for-file "nerd-icons")
+
+(defun ast-grep--candidate-icon-display (display file)
+  "Return DISPLAY with an optional nerd-icons prefix for FILE.
+The underlying candidate string stays DISPLAY so candidate lookup and
+legacy parsing keep working; only the rendered form gains an icon."
+  (if (ast-grep--nerd-icons-available-p)
+      (propertize display
+                  'display
+                  (concat (nerd-icons-icon-for-file file) " " display))
+    display))
+
 (defun ast-grep--format-candidate (match)
   "Return a display candidate for MATCH and register its structured data."
-  (let* ((text (ast-grep--candidate-display-text (plist-get match :text)))
+  (let* ((file (plist-get match :file))
+         (text (ast-grep--candidate-display-text (plist-get match :text)))
          (display (format "%s:%d:%d:%s"
-                          (plist-get match :file)
+                          file
                           (1+ (plist-get match :start-line))
                           (plist-get match :start-column)
-                          text)))
+                          text))
+         (candidate (ast-grep--candidate-icon-display display file)))
     (puthash display match ast-grep--candidate-table)
     (add-text-properties 0 (length display)
                          (list ast-grep--match-property match)
-                         display)
-    display))
+                         candidate)
+    candidate))
 
 (defun ast-grep--legacy-candidate-match (candidate)
   "Parse legacy string CANDIDATE into a match plist."
