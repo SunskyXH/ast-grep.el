@@ -79,8 +79,8 @@
                    (substring-no-properties candidate))
                   match)))))
 
-(ert-deftest ast-grep-core-test-format-candidate-uses-nerd-icons-display ()
-  "When nerd-icons is available, only the icon placeholder uses `display'."
+(ert-deftest ast-grep-core-test-format-candidate-keeps-clean-body-with-icons ()
+  "The candidate body stays icon-free; the icon is offered via affixation."
   (let* ((match (list :file "a.js"
                       :start-line 0
                       :start-column 0
@@ -90,16 +90,38 @@
     (let ((ast-grep-use-nerd-icons t))
       (cl-letf (((symbol-function 'ast-grep--nerd-icons-available-p) (lambda () t))
                  ((symbol-function 'nerd-icons-icon-for-file)
-                  (lambda (file) (propertize icon 'face 'nerd-icons-js))))
+                  (lambda (_file) (propertize icon 'face 'nerd-icons-js))))
         (let ((candidate (ast-grep--format-candidate match)))
-          (should (equal (substring candidate 1) display))
-          (should (equal (get-text-property 0 'display candidate)
-                        (concat icon " ")))
-          (should (null (get-text-property 1 'display candidate)))
+          ;; Body is the plain display string: no leading space, no `display'.
+          (should (equal candidate display))
+          (should (null (get-text-property 0 'display candidate)))
+          ;; The icon is exposed through the prefix helper / affixation instead.
+          (should (equal (ast-grep--candidate-icon-prefix candidate)
+                         (concat icon " ")))
+          (should (equal (ast-grep--affixation (list candidate))
+                         (list (list candidate (concat icon " ") ""))))
           (should (eq (ast-grep--candidate-match candidate) match))
           (should (eq (ast-grep--candidate-match
                        (substring-no-properties candidate))
                       match)))))))
+
+(ert-deftest ast-grep-core-test-candidate-body-supports-prefix-completion ()
+  "Enabling icons must not break basic (prefix) completion of candidates."
+  (let ((ast-grep-use-nerd-icons t))
+    (cl-letf (((symbol-function 'ast-grep--nerd-icons-available-p) (lambda () t))
+              ((symbol-function 'nerd-icons-icon-for-file) (lambda (_file) "I")))
+      (ast-grep--reset-candidate-table)
+      (let* ((c1 (ast-grep--format-candidate
+                  (list :file "a.js" :start-line 0 :start-column 0 :text "hit")))
+             (c2 (ast-grep--format-candidate
+                  (list :file "b.js" :start-line 0 :start-column 0 :text "x")))
+             (completion-styles '(basic))
+             (res (completion-all-completions "a" (list c1 c2) nil 1)))
+        (when (and res (integerp (cdr (last res)))) (setcdr (last res) nil))
+        ;; "a" prefix-matches the a.js candidate; the leading-space bug would
+        ;; have returned nil here.
+        (should (member "a.js:1:0:hit" (mapcar #'substring-no-properties res)))
+        (should-not (member "b.js:1:0:x" (mapcar #'substring-no-properties res)))))))
 
 (ert-deftest ast-grep-core-test-nerd-icons-available-probed-once ()
   "Nerd-icons availability is probed at most once per `ast-grep-use-nerd-icons' value."
