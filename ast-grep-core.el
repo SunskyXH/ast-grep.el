@@ -161,23 +161,41 @@ that includes both stdout and stderr when available."
   (string-trim
    (replace-regexp-in-string "[\r\n]+" " " (or text ""))))
 
+(defvar ast-grep--nerd-icons-available-cache nil
+  "Cached pair of (`ast-grep-use-nerd-icons' . availability), or nil if unprobed.")
+
 (defun ast-grep--nerd-icons-available-p ()
-  "Return non-nil when nerd-icons file icons can be rendered."
-  (and ast-grep-use-nerd-icons
-       (require 'nerd-icons nil t)
-       (fboundp 'nerd-icons-icon-for-file)))
+  "Return non-nil when nerd-icons file icons can be rendered.
+The optional nerd-icons package is probed at most once per
+`ast-grep-use-nerd-icons' setting."
+  (unless (eq (car ast-grep--nerd-icons-available-cache)
+              ast-grep-use-nerd-icons)
+    (setq ast-grep--nerd-icons-available-cache
+          (cons ast-grep-use-nerd-icons
+                (and ast-grep-use-nerd-icons
+                     (require 'nerd-icons nil t)
+                     (fboundp 'nerd-icons-icon-for-file)))))
+  (cdr ast-grep--nerd-icons-available-cache))
 
 (declare-function nerd-icons-icon-for-file "nerd-icons")
 
 (defun ast-grep--candidate-icon-display (display file)
   "Return DISPLAY with an optional nerd-icons prefix for FILE.
-The underlying candidate string stays DISPLAY so candidate lookup and
-legacy parsing keep working; only the rendered form gains an icon."
+Only the icon placeholder uses a `display' property so ivy/consult can
+still decorate the candidate text with match faces."
   (if (ast-grep--nerd-icons-available-p)
-      (propertize display
-                  'display
-                  (concat (nerd-icons-icon-for-file file) " " display))
+      (concat (propertize " "
+                          'display (concat (nerd-icons-icon-for-file file) " ")
+                          'rear-nonsticky t)
+              display)
     display))
+
+(defun ast-grep--candidate-lookup-key (candidate)
+  "Return the hash-table lookup key for plain-text CANDIDATE."
+  (if (and (not (zerop (length candidate)))
+           (eq (aref candidate 0) ?\s))
+      (substring candidate 1)
+    candidate))
 
 (defun ast-grep--format-candidate (match)
   "Return a display candidate for MATCH and register its structured data."
@@ -190,7 +208,7 @@ legacy parsing keep working; only the rendered form gains an icon."
                           text))
          (candidate (ast-grep--candidate-icon-display display file)))
     (puthash display match ast-grep--candidate-table)
-    (add-text-properties 0 (length display)
+    (add-text-properties 0 (length candidate)
                          (list ast-grep--match-property match)
                          candidate)
     candidate))
@@ -213,9 +231,14 @@ that candidates survive backends that strip text properties."
    ((and (consp candidate) (plist-get candidate :file))
     candidate)
    ((stringp candidate)
-    (or (get-text-property 0 ast-grep--match-property candidate)
-        (gethash (substring-no-properties candidate) ast-grep--candidate-table)
-        (ast-grep--legacy-candidate-match candidate)))))
+    (let ((plain (substring-no-properties candidate)))
+      (or (get-text-property 0 ast-grep--match-property candidate)
+          (gethash plain ast-grep--candidate-table)
+          (gethash (ast-grep--candidate-lookup-key plain)
+                   ast-grep--candidate-table)
+          (ast-grep--legacy-candidate-match plain)
+          (ast-grep--legacy-candidate-match
+           (ast-grep--candidate-lookup-key plain)))))))
 
 (defun ast-grep--goto-line-column (line column)
   "Move point to 0-based LINE and character-index COLUMN.

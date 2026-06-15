@@ -51,32 +51,36 @@
 
 (ert-deftest ast-grep-core-test-format-candidate-keeps-display-single-line ()
   "Multiline match text must not break backend newline protocols."
-  (let* ((line "{\"file\":\"a.js\",\"range\":{\"start\":{\"line\":0,\"column\":0}},\"text\":\"foo\\nbar\"}")
-         (candidate (ast-grep--parse-stream-line line))
-         (match (ast-grep--candidate-match candidate)))
-    (should (equal candidate "a.js:1:0:foo bar"))
-    (should-not (string-match-p "\n" candidate))
-    (should (equal (plist-get match :text) "foo\nbar"))
-    (should (eq (ast-grep--candidate-match
-                 (substring-no-properties candidate))
-                match))))
+  (let ((ast-grep-use-nerd-icons nil))
+    (setq ast-grep--nerd-icons-available-cache nil)
+    (let* ((line "{\"file\":\"a.js\",\"range\":{\"start\":{\"line\":0,\"column\":0}},\"text\":\"foo\\nbar\"}")
+           (candidate (ast-grep--parse-stream-line line))
+           (match (ast-grep--candidate-match candidate)))
+      (should (equal candidate "a.js:1:0:foo bar"))
+      (should-not (string-match-p "\n" candidate))
+      (should (equal (plist-get match :text) "foo\nbar"))
+      (should (eq (ast-grep--candidate-match
+                   (substring-no-properties candidate))
+                  match)))))
 
 (ert-deftest ast-grep-core-test-format-candidate-keeps-structured-match ()
   "Display text is not the data contract; the match plist is."
-  (let* ((match (list :file "C:/tmp/a:b.js"
-                      :start-line 4
-                      :start-column 2
-                      :text "x:y"))
-         (candidate (ast-grep--format-candidate match)))
-    (should (equal candidate "C:/tmp/a:b.js:5:2:x:y"))
-    (should (eq (ast-grep--candidate-match candidate) match))
-    ;; Simulate backends that strip text properties.
-    (should (eq (ast-grep--candidate-match
-                 (substring-no-properties candidate))
-                match))))
+  (let ((ast-grep-use-nerd-icons nil))
+    (setq ast-grep--nerd-icons-available-cache nil)
+    (let* ((match (list :file "C:/tmp/a:b.js"
+                        :start-line 4
+                        :start-column 2
+                        :text "x:y"))
+           (candidate (ast-grep--format-candidate match)))
+      (should (equal candidate "C:/tmp/a:b.js:5:2:x:y"))
+      (should (eq (ast-grep--candidate-match candidate) match))
+      ;; Simulate backends that strip text properties.
+      (should (eq (ast-grep--candidate-match
+                   (substring-no-properties candidate))
+                  match)))))
 
 (ert-deftest ast-grep-core-test-format-candidate-uses-nerd-icons-display ()
-  "When nerd-icons is available, candidates keep plain text but gain a display icon."
+  "When nerd-icons is available, only the icon placeholder uses `display'."
   (let* ((match (list :file "a.js"
                       :start-line 0
                       :start-column 0
@@ -88,10 +92,34 @@
                  ((symbol-function 'nerd-icons-icon-for-file)
                   (lambda (file) (propertize icon 'face 'nerd-icons-js))))
         (let ((candidate (ast-grep--format-candidate match)))
-          (should (equal candidate display))
+          (should (equal (substring candidate 1) display))
           (should (equal (get-text-property 0 'display candidate)
-                        (concat icon " " display)))
-          (should (eq (ast-grep--candidate-match candidate) match)))))))
+                        (concat icon " ")))
+          (should (null (get-text-property 1 'display candidate)))
+          (should (eq (ast-grep--candidate-match candidate) match))
+          (should (eq (ast-grep--candidate-match
+                       (substring-no-properties candidate))
+                      match)))))))
+
+(ert-deftest ast-grep-core-test-nerd-icons-available-probed-once ()
+  "Nerd-icons availability is probed at most once per `ast-grep-use-nerd-icons' value."
+  (let ((require-count 0)
+        (ast-grep-use-nerd-icons t))
+    (setq ast-grep--nerd-icons-available-cache nil)
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &optional _noerror _record)
+                 (when (eq feature 'nerd-icons)
+                   (cl-incf require-count))
+                 nil)))
+      (should-not (ast-grep--nerd-icons-available-p))
+      (should-not (ast-grep--nerd-icons-available-p))
+      (should (= require-count 1))
+      (setq ast-grep-use-nerd-icons nil)
+      (should-not (ast-grep--nerd-icons-available-p))
+      (should (= require-count 1))
+      (setq ast-grep-use-nerd-icons t)
+      (should-not (ast-grep--nerd-icons-available-p))
+      (should (= require-count 2)))))
 
 (ert-deftest ast-grep-core-test-parse-stream-output ()
   "Test parsing of multi-line streaming output, skipping malformed lines."
