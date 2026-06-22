@@ -12,7 +12,7 @@
 (require 'ast-grep)
 
 (ert-deftest ast-grep-entry-test-select-backend-sync ()
-  "`sync' backend is honoured regardless of consult/ivy availability."
+  "`sync' backend is honoured regardless of async backend availability."
   (let ((ast-grep-search-backend 'sync))
     (should (eq 'sync (ast-grep--select-backend)))))
 
@@ -27,20 +27,24 @@
       (should (eq 'sync (ast-grep--select-backend))))))
 
 (ert-deftest ast-grep-entry-test-select-backend-auto-without-consult ()
-  "Auto backend falls back to sync when neither consult nor ivy is available."
+  "Auto backend falls back to sync when no async backend is available."
   (let ((ast-grep-search-backend 'auto)
-        (ivy-mode nil))
+        (ivy-mode nil)
+        (helm-mode nil))
     (cl-letf (((symbol-function 'ast-grep--consult-backend-available-p)
                (lambda () nil))
               ((symbol-function 'ast-grep--ivy-backend-available-p)
+               (lambda () nil))
+              ((symbol-function 'ast-grep--helm-backend-available-p)
                (lambda () nil)))
       (should (eq 'sync (ast-grep--select-backend))))))
 
 (ert-deftest ast-grep-entry-test-select-backend-auto-with-consult ()
-  "Auto backend picks consult when it is loadable and ivy-mode is off."
+  "Auto backend picks consult when it is loadable and UI modes are off."
   (skip-unless ast-grep-test--consult-available)
   (let ((ast-grep-search-backend 'auto)
-        (ivy-mode nil))
+        (ivy-mode nil)
+        (helm-mode nil))
     (should (eq 'consult (ast-grep--select-backend)))))
 
 (ert-deftest ast-grep-entry-test-select-backend-auto-with-ivy-and-counsel ()
@@ -53,6 +57,28 @@
                (lambda () t)))
       (should (eq 'ivy (ast-grep--select-backend))))))
 
+(ert-deftest ast-grep-entry-test-select-backend-auto-with-helm ()
+  "Auto backend picks Helm when `helm-mode' is active and Helm is available."
+  (let ((ast-grep-search-backend 'auto)
+        (ivy-mode nil)
+        (helm-mode t))
+    (cl-letf (((symbol-function 'ast-grep--helm-backend-available-p)
+               (lambda () t))
+              ((symbol-function 'ast-grep--consult-backend-available-p)
+               (lambda () t)))
+      (should (eq 'helm (ast-grep--select-backend))))))
+
+(ert-deftest ast-grep-entry-test-select-backend-auto-with-helm-no-helm ()
+  "Auto falls back to sync when `helm-mode' is on but Helm is missing."
+  (let ((ast-grep-search-backend 'auto)
+        (ivy-mode nil)
+        (helm-mode t))
+    (cl-letf (((symbol-function 'ast-grep--helm-backend-available-p)
+               (lambda () nil))
+              ((symbol-function 'ast-grep--consult-backend-available-p)
+               (lambda () t)))
+      (should (eq 'sync (ast-grep--select-backend))))))
+
 (ert-deftest ast-grep-entry-test-select-backend-force-consult-without-consult ()
   "Forced `consult' falls back to sync when consult is not loadable."
   (let ((ast-grep-search-backend 'consult))
@@ -64,6 +90,13 @@
   "Forced `ivy' falls back to sync when counsel/ivy are not loadable."
   (let ((ast-grep-search-backend 'ivy))
     (cl-letf (((symbol-function 'ast-grep--ivy-backend-available-p)
+               (lambda () nil)))
+      (should (eq 'sync (ast-grep--select-backend))))))
+
+(ert-deftest ast-grep-entry-test-select-backend-force-helm-without-helm ()
+  "Forced `helm' falls back to sync when Helm is not loadable."
+  (let ((ast-grep-search-backend 'helm))
+    (cl-letf (((symbol-function 'ast-grep--helm-backend-available-p)
                (lambda () nil)))
       (should (eq 'sync (ast-grep--select-backend))))))
 
@@ -134,6 +167,27 @@
                        directory-called directory))))
       (ast-grep-search ast-grep-test--fixtures-dir)
       (should (eq backend-called 'ivy))
+      (should (equal directory-called ast-grep-test--fixtures-dir)))))
+
+(ert-deftest ast-grep-entry-test-search-with-helm-mode-dispatches-helm ()
+  "With Helm mode active and Helm available, route to Helm, not consult."
+  (let ((ast-grep-search-backend 'auto)
+        (ivy-mode nil)
+        (helm-mode t)
+        backend-called
+        directory-called)
+    (cl-letf (((symbol-function 'ast-grep--executable-available-p)
+               (lambda () t))
+              ((symbol-function 'ast-grep--helm-backend-available-p)
+               (lambda () t))
+              ((symbol-function 'ast-grep--consult-backend-available-p)
+               (lambda () t))
+              ((symbol-function 'ast-grep--run-search-backend)
+               (lambda (backend directory)
+                 (setq backend-called backend
+                       directory-called directory))))
+      (ast-grep-search ast-grep-test--fixtures-dir)
+      (should (eq backend-called 'helm))
       (should (equal directory-called ast-grep-test--fixtures-dir)))))
 
 (ert-deftest ast-grep-entry-test-rewrite-applies-yes-to-all ()

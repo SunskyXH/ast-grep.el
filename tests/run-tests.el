@@ -5,7 +5,7 @@
 ;;; Commentary:
 
 ;; Unified ERT entry point.  Set AST_GREP_TEST_BACKEND to sync,
-;; consult, ivy, or full to choose the backend sandbox suite.
+;; consult, ivy, helm, or full to choose the backend sandbox suite.
 
 ;;; Code:
 
@@ -19,6 +19,7 @@
     "ast-grep-sync-test.el"
     "ast-grep-consult-test.el"
     "ast-grep-ivy-test.el"
+    "ast-grep-helm-test.el"
     "ast-grep-entry-test.el")
   "All test files loadable by `ast-grep-test-run-batch'.")
 
@@ -36,6 +37,9 @@
       ("ivy" '("ast-grep-core-test.el"
                "ast-grep-ivy-test.el"
                "ast-grep-entry-test.el"))
+      ("helm" '("ast-grep-core-test.el"
+                "ast-grep-helm-test.el"
+                "ast-grep-entry-test.el"))
       ("full" ast-grep-test--all-test-files)
       (_ ast-grep-test--all-test-files))))
 
@@ -57,6 +61,9 @@
         ("ivy" '(or "^ast-grep-core-test-"
                    "^ast-grep-ivy-test-"
                    "^ast-grep-entry-test-"))
+        ("helm" '(or "^ast-grep-core-test-"
+                    "^ast-grep-helm-test-"
+                    "^ast-grep-entry-test-"))
         ("full" t)
         (_ t))))
 

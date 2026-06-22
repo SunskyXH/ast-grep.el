@@ -35,7 +35,7 @@
 ;; - Project-wide search
 ;; - Integration with completing-read (Vertico, etc.)
 ;; - Streaming JSON parsing for efficient processing
-;; - Async search with live results (consult, or counsel/ivy when
+;; - Async search with live results (consult, Helm, or counsel/ivy when
 ;;   `ivy-mode' is active)
 
 ;;; Code:
@@ -45,27 +45,35 @@
 (require 'ast-grep-sync)
 
 (defvar ivy-mode nil)
+(defvar helm-mode nil)
 
 (declare-function ast-grep--consult-available-p "ast-grep-consult")
 (declare-function ast-grep--search-consult "ast-grep-consult")
 (declare-function ast-grep--ivy-available-p "ast-grep-ivy")
 (declare-function ast-grep--search-ivy "ast-grep-ivy")
+(declare-function ast-grep--helm-available-p "ast-grep-helm")
+(declare-function ast-grep--search-helm "ast-grep-helm")
 
 (defcustom ast-grep-search-backend 'auto
   "Backend selector for `ast-grep-search'.
 `auto' (default) picks the best available backend:
  - counsel/ivy async when `ivy-mode' is active and counsel is
    loadable;
- - consult async when consult is loadable and `ivy-mode' is off;
+ - Helm async when `helm-mode' is active and Helm is loadable;
+ - consult async when consult is loadable and neither `ivy-mode' nor
+   `helm-mode' is active;
  - synchronous `completing-read' otherwise.
 `consult' forces the consult async pipeline; falls back to sync if
 consult is not loadable.
 `ivy' forces the counsel/ivy async pipeline; falls back to sync if
 counsel/ivy is not loadable.
+`helm' forces the Helm async pipeline; falls back to sync if Helm is
+not loadable.
 `sync' forces the synchronous `completing-read' path."
   :type '(choice (const :tag "Auto-detect" auto)
                  (const :tag "Consult async" consult)
                  (const :tag "Counsel/ivy async" ivy)
+                 (const :tag "Helm async" helm)
                  (const :tag "Sync completing-read" sync))
   :group 'ast-grep)
 
@@ -79,24 +87,33 @@ counsel/ivy is not loadable.
   (and (require 'ast-grep-ivy nil t)
        (ast-grep--ivy-available-p)))
 
+(defun ast-grep--helm-backend-available-p ()
+  "Return non-nil when the Helm backend and Helm are loadable."
+  (and (require 'ast-grep-helm nil t)
+       (ast-grep--helm-available-p)))
+
 (defun ast-grep--project-root ()
   "Get the current project root directory."
   (when-let ((project (project-current)))
     (project-root project)))
 
 (defun ast-grep--select-backend ()
-  "Return the resolved backend symbol: `consult', `ivy', or `sync'.
+  "Return the resolved backend symbol: `consult', `ivy', `helm', or `sync'.
 Honours `ast-grep-search-backend'.  In `auto' mode, active
-`ivy-mode' suppresses consult because consult async minibuffer hooks
-and ivy's minibuffer management are not compatible."
+`ivy-mode' or `helm-mode' suppresses consult because consult async
+minibuffer hooks and those UIs' minibuffer management are not
+compatible."
   (pcase ast-grep-search-backend
     ('sync 'sync)
     ('consult (if (ast-grep--consult-backend-available-p) 'consult 'sync))
     ('ivy (if (ast-grep--ivy-backend-available-p) 'ivy 'sync))
+    ('helm (if (ast-grep--helm-backend-available-p) 'helm 'sync))
     ('auto
      (if (bound-and-true-p ivy-mode)
          (if (ast-grep--ivy-backend-available-p) 'ivy 'sync)
-       (if (ast-grep--consult-backend-available-p) 'consult 'sync)))))
+       (if (bound-and-true-p helm-mode)
+           (if (ast-grep--helm-backend-available-p) 'helm 'sync)
+         (if (ast-grep--consult-backend-available-p) 'consult 'sync))))))
 
 (defun ast-grep--run-search-backend (backend directory)
   "Run BACKEND for ast-grep search in DIRECTORY."
@@ -107,6 +124,9 @@ and ivy's minibuffer management are not compatible."
     ('ivy
      (require 'ast-grep-ivy)
      (ast-grep--search-ivy directory))
+    ('helm
+     (require 'ast-grep-helm)
+     (ast-grep--search-helm directory))
     ('sync (ast-grep--search-sync directory))))
 
 (defun ast-grep--backend-description ()
@@ -136,9 +156,10 @@ DIRECTORY defaults to current directory.
 
 The backend is chosen by `ast-grep-search-backend'.  In the default
 `auto' mode you get the counsel/ivy async pipeline when `ivy-mode' is
-active and counsel is available, the consult async pipeline when
-consult is available and ivy is inactive, and a synchronous
-`completing-read' fallback otherwise.
+active and counsel is available, the Helm async pipeline when
+`helm-mode' is active and Helm is available, the consult async pipeline
+when consult is available and neither UI mode is active, and a
+synchronous `completing-read' fallback otherwise.
 
 Example patterns:
   console.log($A)     - Find console.log calls

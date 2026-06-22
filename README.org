@@ -16,7 +16,7 @@ An Emacs interface to [[https://github.com/ast-grep/ast-grep][ast-grep]], a CLI 
 - Project-wide search support
 - Integration with completing-read frameworks (Vertico, etc.)
 - Streaming JSON parsing for efficient processing
-- Async search with live results via consult, or via counsel/ivy when ~ivy-mode~ is active
+- Async search with live results via consult, Helm, or counsel/ivy when ~ivy-mode~ is active
 - Interactive rewrite across files (~project-query-replace-regexp~ style)
 
 ** Requirements
@@ -25,16 +25,18 @@ An Emacs interface to [[https://github.com/ast-grep/ast-grep][ast-grep]], a CLI 
 - [[https://github.com/ast-grep/ast-grep][ast-grep]] CLI tool installed and available in PATH
 - Optional, for live async search:
   - [[https://github.com/minad/consult][consult]] (pairs with Vertico, Selectrum, etc.), or
+  - [[https://emacs-helm.github.io/helm/][Helm]] when ~helm-mode~ is active, or
   - [[https://github.com/abo-abo/swiper][ivy + counsel]] when ~ivy-mode~ is active
 
 *** Async Backend Support
 
 | Backend selector | Emacs version | Runtime dependency | Selection behavior | Eask sandbox |
 |------------------+---------------+--------------------+--------------------+--------------|
-| ~auto~           | 28.1+, consult path requires 29.1+ | Optional consult or ivy/counsel | Uses ivy/counsel when ~ivy-mode~ is active and available; otherwise consult when available; otherwise sync | ~eask run script test:full~ |
+| ~auto~           | 28.1+, consult path requires 29.1+ | Optional consult, Helm, or ivy/counsel | Uses ivy/counsel when ~ivy-mode~ is active and available; otherwise Helm when ~helm-mode~ is active and available; otherwise consult when available; otherwise sync | ~eask run script test:full~ |
 | ~sync~           | 28.1+ | None | Uses synchronous ~completing-read~ candidates | ~eask run script test:sync~ |
 | ~consult~        | 29.1+ | consult (and its dependencies) | Uses consult async search, falling back to sync if consult is unavailable | ~eask run script test:consult~ |
 | ~ivy~            | 28.1+ | ivy + counsel | Uses counsel/ivy async search, falling back to sync if ivy/counsel is unavailable | ~eask run script test:ivy~ |
+| ~helm~           | 28.1+ | Helm | Uses Helm async search, falling back to sync if Helm is unavailable | ~eask run script test:helm~ |
 
 ** Installation
 
@@ -99,18 +101,19 @@ Customize the following variables:
 - ~ast-grep-executable~ - Path to ast-grep executable (default: "ast-grep")
 - ~ast-grep-debug~ - Enable debug output for troubleshooting (default: nil)
 - ~ast-grep-async-min-input~ - Minimum input length before triggering async search (default: 3)
-- ~ast-grep-search-backend~ - Backend for ~ast-grep-search~ (default: ~auto~; accepts ~consult~, ~ivy~, or ~sync~). In ~auto~, active ~ivy-mode~ uses counsel/ivy when available, otherwise consult is used when available, with synchronous ~completing-read~ as the fallback.
+- ~ast-grep-search-backend~ - Backend for ~ast-grep-search~ (default: ~auto~; accepts ~consult~, ~ivy~, ~helm~, or ~sync~). In ~auto~, active ~ivy-mode~ uses counsel/ivy when available, active ~helm-mode~ uses Helm when available, otherwise consult is used when available, with synchronous ~completing-read~ as the fallback.
 
 ** Development
 
 This repository uses Eask to keep optional async backends isolated during
-tests. The sync sandbox has no optional completion dependency; consult
-and ivy sandboxes install only the backend they exercise.
+tests. The sync sandbox has no optional completion dependency; consult,
+ivy, and Helm sandboxes install only the backend they exercise.
 
 #+begin_src bash
 eask run script compile
 eask run script test:sync
 eask run script test:consult
 eask run script test:ivy
+eask run script test:helm
 eask run script test:full
 #+end_src
