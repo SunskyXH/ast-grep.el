@@ -83,7 +83,7 @@ Add to your ~packages.el~:
 - ~ast-grep-describe-backend~ - Show the configured backend selector and resolved backend
 - ~ast-grep-rewrite~ - Interactive search-and-rewrite in current directory
 - ~ast-grep-rewrite-project~ - Interactive search-and-rewrite across the project
-- ~ast-grep-outline~ - Jump to a symbol in the current file (uses ~consult-imenu~ when available, otherwise ~imenu~)
+- ~ast-grep-outline~ - Jump to a symbol in the current file (uses ~counsel-imenu~ when ~ivy-mode~ is active, otherwise ~consult-imenu~, otherwise the built-in ~imenu~)
 
 ~ast-grep-rewrite~ prompts for a pattern and a replacement template,
 then walks each match asking ~y~/~n~/~!~/~q~ (yes / skip /
@@ -96,9 +96,11 @@ save with ~M-x save-some-buffers~ (~C-x s~).
 ~ast-grep-outline~ asks ~ast-grep outline~ for the symbols in the current
 file and lets you jump to one. Symbols are grouped by kind (Classes,
 Functions, Methods, ...) and members are qualified with their enclosing
-type (e.g. ~Widget.render~). It dispatches to ~consult-imenu~ when
-available and falls back to plain ~imenu~ otherwise. The outline is read
-from the file on disk, so save the buffer to keep positions accurate.
+type (e.g. ~Widget.render~). It picks a picker the same way
+~ast-grep-search~ picks a backend: ~counsel-imenu~ when ~ivy-mode~ is
+active, otherwise ~consult-imenu~, otherwise the built-in ~imenu~ (which
+your completion framework still drives). The outline is read from the
+file on disk, so save the buffer to keep positions accurate.
 
 To make ast-grep the imenu source for a buffer permanently, enable
 ~ast-grep-outline-mode~. Every imenu consumer (~imenu~, ~consult-imenu~,

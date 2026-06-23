@@ -22,7 +22,9 @@
 (require 'ast-grep-core)
 
 (declare-function consult-imenu "consult-imenu")
+(declare-function counsel-imenu "counsel")
 (defvar consult-imenu--cache)
+(defvar ivy-mode)
 
 (defconst ast-grep--outline-type-titles
   '(("class" . "Classes")
@@ -204,9 +206,11 @@ the buffer to keep positions accurate."
 ;;;###autoload
 (defun ast-grep-outline ()
   "Jump to a symbol in the current file via `ast-grep outline'.
-Dispatch to `consult-imenu' when available, otherwise `imenu'.  This is a
-one-shot entry point: it does not require `ast-grep-outline-mode' and
-leaves the buffer's own imenu configuration untouched."
+Pick the picker the way `ast-grep-search' picks a backend: `counsel-imenu'
+when `ivy-mode' is active and counsel is available, otherwise
+`consult-imenu', otherwise the built-in `imenu'.  This is a one-shot entry
+point: it does not require `ast-grep-outline-mode' and leaves the buffer's
+own imenu configuration untouched."
   (interactive)
   (unless (ast-grep--executable-available-p)
     (error "The ast-grep executable not found. Please install ast-grep"))
@@ -225,14 +229,19 @@ leaves the buffer's own imenu configuration untouched."
           (setq-local imenu-create-index-function
                       #'ast-grep--outline-imenu-index)
           (setq imenu--index-alist nil)
-          (if (and (require 'consult-imenu nil t) (fboundp 'consult-imenu))
-              (progn
-                ;; consult-imenu caches per `buffer-modified-tick' and ignores
-                ;; `imenu--index-alist', so clear its cache to force a recompute
-                ;; against our index.
-                (setq-local consult-imenu--cache nil)
-                (call-interactively #'consult-imenu))
-            (call-interactively #'imenu)))
+          (cond
+           ;; Mirror `ast-grep-search' backend selection: ivy users get
+           ;; counsel-imenu, which reads the same `imenu--index-alist'.
+           ((and (bound-and-true-p ivy-mode)
+                 (require 'counsel nil t) (fboundp 'counsel-imenu))
+            (call-interactively #'counsel-imenu))
+           ((and (require 'consult-imenu nil t) (fboundp 'consult-imenu))
+            ;; consult-imenu caches per `buffer-modified-tick' and ignores
+            ;; `imenu--index-alist', so clear its cache to force a recompute
+            ;; against our index.
+            (setq-local consult-imenu--cache nil)
+            (call-interactively #'consult-imenu))
+           (t (call-interactively #'imenu))))
       (if (eq saved-fn 'unset)
           (kill-local-variable 'imenu-create-index-function)
         (setq-local imenu-create-index-function saved-fn))

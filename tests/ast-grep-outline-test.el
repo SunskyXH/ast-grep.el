@@ -135,7 +135,7 @@ installed in the current sandbox."
   (with-temp-buffer
     (setq buffer-file-name "x.ts")
     (setq-local imenu--index-alist 'sentinel)
-    (let ((called nil))
+    (let ((called nil) (ivy-mode nil))
       (cl-letf (((symbol-function 'ast-grep--executable-available-p)
                  (lambda () t))
                 ((symbol-function 'imenu)
@@ -294,6 +294,20 @@ binary predates 0.44.0 or is missing entirely."
         (should (eq imenu-create-index-function
                     #'ast-grep--outline-imenu-index))
         (should-not (funcall imenu-create-index-function))))))
+
+(ert-deftest ast-grep-outline-test-command-dispatches-counsel-when-ivy ()
+  "With `ivy-mode' active and counsel available, dispatch to counsel-imenu."
+  (skip-unless (require 'counsel nil t))
+  (with-temp-buffer
+    (setq buffer-file-name "x.ts")
+    (let ((ivy-mode t)
+          (called nil))
+      (cl-letf (((symbol-function 'ast-grep--executable-available-p)
+                 (lambda () t))
+                ((symbol-function 'counsel-imenu)
+                 (lambda (&rest _) (interactive) (setq called 'counsel))))
+        (ast-grep-outline)
+        (should (eq called 'counsel))))))
 
 (provide 'ast-grep-outline-test)
 
