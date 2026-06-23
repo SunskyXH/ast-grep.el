@@ -266,6 +266,35 @@ installed in the current sandbox."
         ;; ...and the buffer's prior cache is restored afterwards.
         (should (equal consult-imenu--cache stale))))))
 
+(ert-deftest ast-grep-outline-test-mode-invalidates-imenu-cache ()
+  "Toggling the mode clears a stale imenu index left by the prior source."
+  (with-temp-buffer
+    (setq buffer-file-name "x.ts")
+    (setq-local imenu--index-alist '(("old" . 1)))
+    (ast-grep-outline-mode 1)
+    ;; Enabling drops the index built by the previous source.
+    (should-not imenu--index-alist)
+    (setq-local imenu--index-alist '(("ours" . 2)))
+    (ast-grep-outline-mode -1)
+    ;; Disabling drops our index so the restored source rebuilds.
+    (should-not imenu--index-alist)))
+
+(ert-deftest ast-grep-outline-test-degrades-without-outline-support ()
+  "An ast-grep without `outline' yields an empty index, never an error.
+This keeps the rest of the package (search/rewrite) usable when the
+binary predates 0.44.0 or is missing entirely."
+  (with-temp-buffer
+    (setq buffer-file-name "x.ts")
+    (let ((inhibit-message t))
+      (cl-letf (((symbol-function 'ast-grep--run-outline)
+                 (lambda (_file)
+                   (error "exit code 2: unrecognized subcommand 'outline'"))))
+        (ast-grep-outline-mode 1)
+        ;; imenu consumers call this; it returns an empty index, not an error.
+        (should (eq imenu-create-index-function
+                    #'ast-grep--outline-imenu-index))
+        (should-not (funcall imenu-create-index-function))))))
+
 (provide 'ast-grep-outline-test)
 
 ;;; ast-grep-outline-test.el ends here

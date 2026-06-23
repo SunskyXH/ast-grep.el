@@ -89,7 +89,7 @@ character-index coordinates ast-grep reports."
         (point)))))
 
 (defun ast-grep--outline-flatten (items prefix)
-  "Return flat (TYPE NAME . POSITION) entries for outline ITEMS.
+  "Return flat (TYPE NAME POSITION) entries for outline ITEMS.
 Members are qualified with their enclosing item via PREFIX, e.g.
 \"Widget.render\", and recursion preserves source order."
   (apply
@@ -158,6 +158,16 @@ rather than signalling, since this runs from `imenu-create-index-function'."
        (message "ast-grep outline failed: %s" (error-message-string err))
        nil))))
 
+(defun ast-grep--outline-invalidate-imenu-caches ()
+  "Drop cached imenu indexes so a changed index source takes effect.
+imenu caches in `imenu--index-alist' and consult-imenu keeps its own
+buffer-local `consult-imenu--cache'; neither notices a swapped
+`imenu-create-index-function'."
+  (when (local-variable-p 'imenu--index-alist)
+    (setq-local imenu--index-alist nil))
+  (when (boundp 'consult-imenu--cache)
+    (kill-local-variable 'consult-imenu--cache)))
+
 (defvar-local ast-grep--outline-saved-imenu-function 'unset
   "Saved `imenu-create-index-function' from before `ast-grep-outline-mode'.")
 
@@ -186,7 +196,10 @@ the buffer to keep positions accurate."
         (kill-local-variable 'imenu-create-index-function)
       (setq-local imenu-create-index-function
                   ast-grep--outline-saved-imenu-function))
-    (setq ast-grep--outline-saved-imenu-function 'unset)))
+    (setq ast-grep--outline-saved-imenu-function 'unset))
+  ;; Either toggle changes the index source; drop caches that still reflect
+  ;; the previous one so imenu and consult-imenu rebuild against it.
+  (ast-grep--outline-invalidate-imenu-caches))
 
 ;;;###autoload
 (defun ast-grep-outline ()
