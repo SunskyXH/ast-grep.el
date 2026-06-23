@@ -150,7 +150,7 @@ installed in the current sandbox."
 
 (ert-deftest ast-grep-outline-test-real-binary-index ()
   "The real outline binary produces the expected index for sample.ts."
-  (skip-unless (ast-grep-test--ast-grep-available-p))
+  (skip-unless (ast-grep-test--outline-available-p))
   (let ((buffer (find-file-noselect ast-grep-outline-test--sample-ts)))
     (unwind-protect
         (with-current-buffer buffer

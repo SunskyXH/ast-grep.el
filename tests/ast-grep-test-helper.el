@@ -37,6 +37,12 @@
   "Return non-nil when the ast-grep binary is on PATH."
   (executable-find "ast-grep"))
 
+(defun ast-grep-test--outline-available-p ()
+  "Return non-nil when the ast-grep binary supports the `outline' subcommand.
+ast-grep gained `outline' in 0.44.0; older binaries exit non-zero."
+  (and (ast-grep-test--ast-grep-available-p)
+       (eq 0 (call-process "ast-grep" nil nil nil "outline" "--help"))))
+
 (defvar ast-grep-test--consult-available
   (require 'consult nil t)
   "Non-nil if consult is loadable during this test run.")
