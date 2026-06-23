@@ -47,7 +47,9 @@
     (unless command
       (error "Helm pattern is shorter than `ast-grep-async-min-input'"))
     (ast-grep--reset-candidate-table)
-    (apply #'start-process "ast-grep-helm" nil command)))
+    (let ((process-connection-type nil)
+          (coding-system-for-read 'utf-8))
+      (apply #'start-process "ast-grep-helm" nil command))))
 
 (defun ast-grep--helm-display-candidate (candidate)
   "Return a Helm display/real pair for CANDIDATE."

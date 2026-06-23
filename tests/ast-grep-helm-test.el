@@ -31,18 +31,26 @@
                           :start-line 0
                           :start-column 0
                           :text "stale")))
-        captured)
+        captured
+        captured-connection-type
+        captured-coding-system)
     (should (ast-grep--candidate-match candidate))
     (cl-letf (((symbol-function 'start-process)
-               (lambda (&rest args)
-                 (setq captured args)
-                 'process)))
-      (should (eq (ast-grep--helm-candidates-process "/dir") 'process))
-      (should (equal captured
-                     '("ast-grep-helm" nil "ast-grep" "run"
-                       "--pattern=abc" "--json=stream" "/dir")))
-      (should-not (gethash (substring-no-properties candidate)
-                           ast-grep--candidate-table)))))
+              (lambda (&rest args)
+                (setq captured args)
+                (setq captured-connection-type process-connection-type)
+                (setq captured-coding-system coding-system-for-read)
+                'process)))
+      (let ((process-connection-type t)
+            (coding-system-for-read 'iso-latin-1))
+        (should (eq (ast-grep--helm-candidates-process "/dir") 'process))
+        (should (equal captured
+                       '("ast-grep-helm" nil "ast-grep" "run"
+                         "--pattern=abc" "--json=stream" "/dir")))
+        (should-not captured-connection-type)
+        (should (eq captured-coding-system 'utf-8))
+        (should-not (gethash (substring-no-properties candidate)
+                             ast-grep--candidate-table))))))
 
 (ert-deftest ast-grep-helm-test-candidates-process-rejects-short-input ()
   "Calling the process builder below the min-input threshold is an error."
