@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2025 SunskyXH
 
-;; Author: SunskyxXH <sunskyxh@gmail.com>
+;; Author: SunskyXH <sunskyxh@gmail.com>
 ;; Version: 0.4.1
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: tools, matching

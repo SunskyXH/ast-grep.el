@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2025 SunskyXH
 
-;; Author: SunskyxXH <sunskyxh@gmail.com>
+;; Author: SunskyXH <sunskyxh@gmail.com>
 ;; Keywords: tools, matching
 
 ;; This file is not part of GNU Emacs.
