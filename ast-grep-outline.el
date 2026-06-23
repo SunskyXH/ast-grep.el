@@ -206,11 +206,12 @@ the buffer to keep positions accurate."
 ;;;###autoload
 (defun ast-grep-outline ()
   "Jump to a symbol in the current file via `ast-grep outline'.
-Pick the picker the way `ast-grep-search' picks a backend: `counsel-imenu'
-when `ivy-mode' is active and counsel is available, otherwise
-`consult-imenu', otherwise the built-in `imenu'.  This is a one-shot entry
-point: it does not require `ast-grep-outline-mode' and leaves the buffer's
-own imenu configuration untouched."
+Pick the picker the way `ast-grep-search' picks a backend: when `ivy-mode'
+is active use `counsel-imenu' (or the built-in `imenu' if counsel is
+unavailable, never `consult-imenu'); otherwise use `consult-imenu' when
+available, else `imenu'.  This is a one-shot entry point: it does not
+require `ast-grep-outline-mode' and leaves the buffer's own imenu
+configuration untouched."
   (interactive)
   (unless (ast-grep--executable-available-p)
     (error "The ast-grep executable not found. Please install ast-grep"))
@@ -230,11 +231,13 @@ own imenu configuration untouched."
                       #'ast-grep--outline-imenu-index)
           (setq imenu--index-alist nil)
           (cond
-           ;; Mirror `ast-grep-search' backend selection: ivy users get
-           ;; counsel-imenu, which reads the same `imenu--index-alist'.
-           ((and (bound-and-true-p ivy-mode)
-                 (require 'counsel nil t) (fboundp 'counsel-imenu))
-            (call-interactively #'counsel-imenu))
+           ;; Mirror `ast-grep--select-backend': under ivy-mode use
+           ;; counsel-imenu, else the built-in imenu (ivy drives it) --- never
+           ;; consult.  Both read the same `imenu--index-alist'.
+           ((bound-and-true-p ivy-mode)
+            (if (and (require 'counsel nil t) (fboundp 'counsel-imenu))
+                (call-interactively #'counsel-imenu)
+              (call-interactively #'imenu)))
            ((and (require 'consult-imenu nil t) (fboundp 'consult-imenu))
             ;; consult-imenu caches per `buffer-modified-tick' and ignores
             ;; `imenu--index-alist', so clear its cache to force a recompute

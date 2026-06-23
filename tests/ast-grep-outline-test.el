@@ -309,6 +309,24 @@ binary predates 0.44.0 or is missing entirely."
         (ast-grep-outline)
         (should (eq called 'counsel))))))
 
+(ert-deftest ast-grep-outline-test-command-ivy-without-counsel-uses-imenu ()
+  "ivy-mode active but counsel missing falls to imenu, never consult.
+Runs in the consult sandbox, where consult is present but counsel is not."
+  (skip-unless (and (require 'consult-imenu nil t)
+                    (not (require 'counsel nil t))))
+  (with-temp-buffer
+    (setq buffer-file-name "x.ts")
+    (let ((ivy-mode t)
+          (called nil))
+      (cl-letf (((symbol-function 'ast-grep--executable-available-p)
+                 (lambda () t))
+                ((symbol-function 'consult-imenu)
+                 (lambda (&rest _) (interactive) (setq called 'consult)))
+                ((symbol-function 'imenu)
+                 (lambda (&rest _) (interactive) (setq called 'imenu))))
+        (ast-grep-outline)
+        (should (eq called 'imenu))))))
+
 (provide 'ast-grep-outline-test)
 
 ;;; ast-grep-outline-test.el ends here
