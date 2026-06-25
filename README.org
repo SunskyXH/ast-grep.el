@@ -18,11 +18,13 @@ An Emacs interface to [[https://github.com/ast-grep/ast-grep][ast-grep]], a CLI 
 - Streaming JSON parsing for efficient processing
 - Async search with live results via consult, or via counsel/ivy when ~ivy-mode~ is active
 - Interactive rewrite across files (~project-query-replace-regexp~ style)
+- In-file symbol navigation via ~ast-grep outline~, exposed through ~imenu~ (so ~consult-imenu~, ~counsel-imenu~, ~imenu-list~, ... all work)
 
 ** Requirements
 
 - Emacs 28.1 or later
 - [[https://github.com/ast-grep/ast-grep][ast-grep]] CLI tool installed and available in PATH
+  - The outline navigation commands require ast-grep 0.44.0 or later
 - Optional, for live async search:
   - [[https://github.com/minad/consult][consult]] (pairs with Vertico, Selectrum, etc.), or
   - [[https://github.com/abo-abo/swiper][ivy + counsel]] when ~ivy-mode~ is active
@@ -81,12 +83,38 @@ Add to your ~packages.el~:
 - ~ast-grep-describe-backend~ - Show the configured backend selector and resolved backend
 - ~ast-grep-rewrite~ - Interactive search-and-rewrite in current directory
 - ~ast-grep-rewrite-project~ - Interactive search-and-rewrite across the project
+- ~ast-grep-outline~ - Jump to a symbol in the current file (picker mirrors the ~ast-grep-search~ backend: ~counsel-imenu~ under ~ivy-mode~, otherwise ~consult-imenu~, with the built-in ~imenu~ as the universal fallback)
 
 ~ast-grep-rewrite~ prompts for a pattern and a replacement template,
 then walks each match asking ~y~/~n~/~!~/~q~ (yes / skip /
 apply-all-remaining / quit), following ~query-replace~ conventions like
 ~project-query-replace-regexp~. Modified buffers are left for you to
 save with ~M-x save-some-buffers~ (~C-x s~).
+
+*** Outline navigation (imenu)
+
+~ast-grep-outline~ asks ~ast-grep outline~ for the symbols in the current
+file and lets you jump to one. Symbols are grouped by kind (Classes,
+Functions, Methods, ...) and members are qualified with their enclosing
+type (e.g. ~Widget.render~). It picks a picker the same way
+~ast-grep-search~ picks a backend: under ~ivy-mode~ it uses
+~counsel-imenu~ (never ~consult-imenu~), otherwise ~consult-imenu~ when
+available, always falling back to the built-in ~imenu~ (which your
+completion framework still drives). The outline is read from the file on
+disk, so save the buffer to keep positions accurate.
+
+To make ast-grep the imenu source for a buffer permanently, enable
+~ast-grep-outline-mode~. Every imenu consumer (~imenu~, ~consult-imenu~,
+~counsel-imenu~, ~imenu-list~, ...) then lists ast-grep's symbols:
+
+#+begin_src emacs-lisp
+;; e.g. use ast-grep's outline for imenu in TypeScript buffers
+(add-hook 'typescript-ts-mode-hook #'ast-grep-outline-mode)
+#+end_src
+
+Outline support covers the languages ast-grep ships outline rules for
+(TypeScript/JavaScript, Python, Go, Rust, Java, ...). Languages without
+outline rules yield an empty index.
 
 *** Minor Mode
 

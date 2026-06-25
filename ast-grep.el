@@ -43,6 +43,7 @@
 (require 'project)
 (require 'ast-grep-core)
 (require 'ast-grep-sync)
+(require 'ast-grep-outline)
 
 (defvar ivy-mode nil)
 

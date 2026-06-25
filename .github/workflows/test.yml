@@ -60,12 +60,9 @@ jobs:
         with:
           version: "0.12.9"
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v27
-
       - name: Install ast-grep
         run: |
-          nix profile install nixpkgs#ast-grep
+          npm install -g @ast-grep/cli@^0.44.0
           ast-grep --version
 
       - name: Byte-compile

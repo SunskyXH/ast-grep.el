@@ -16,6 +16,7 @@
 
 (defconst ast-grep-test--all-test-files
   '("ast-grep-core-test.el"
+    "ast-grep-outline-test.el"
     "ast-grep-sync-test.el"
     "ast-grep-consult-test.el"
     "ast-grep-ivy-test.el"
@@ -28,12 +29,15 @@
       ast-grep-test--all-test-files
     (pcase (getenv "AST_GREP_TEST_BACKEND")
       ("sync" '("ast-grep-core-test.el"
+                "ast-grep-outline-test.el"
                 "ast-grep-sync-test.el"
                 "ast-grep-entry-test.el"))
       ("consult" '("ast-grep-core-test.el"
+                   "ast-grep-outline-test.el"
                    "ast-grep-consult-test.el"
                    "ast-grep-entry-test.el"))
       ("ivy" '("ast-grep-core-test.el"
+               "ast-grep-outline-test.el"
                "ast-grep-ivy-test.el"
                "ast-grep-entry-test.el"))
       ("full" ast-grep-test--all-test-files)
@@ -49,12 +53,15 @@
   (or (getenv "AST_GREP_TEST_SELECTOR")
       (pcase (getenv "AST_GREP_TEST_BACKEND")
         ("sync" '(or "^ast-grep-core-test-"
+                    "^ast-grep-outline-test-"
                     "^ast-grep-sync-test-"
                     "^ast-grep-entry-test-"))
         ("consult" '(or "^ast-grep-core-test-"
+                       "^ast-grep-outline-test-"
                        "^ast-grep-consult-test-"
                        "^ast-grep-entry-test-"))
         ("ivy" '(or "^ast-grep-core-test-"
+                   "^ast-grep-outline-test-"
                    "^ast-grep-ivy-test-"
                    "^ast-grep-entry-test-"))
         ("full" t)
