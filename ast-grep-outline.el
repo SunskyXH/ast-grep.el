@@ -25,6 +25,9 @@
 (declare-function counsel-imenu "counsel")
 (declare-function helm-imenu "helm-imenu")
 (defvar consult-imenu--cache)
+(defvar helm-cached-imenu-alist)
+(defvar helm-cached-imenu-candidates)
+(defvar helm-cached-imenu-tick)
 (defvar ivy-mode)
 (defvar helm-mode)
 
@@ -162,15 +165,24 @@ rather than signalling, since this runs from `imenu-create-index-function'."
        (message "ast-grep outline failed: %s" (error-message-string err))
        nil))))
 
+(defun ast-grep--outline-clear-helm-imenu-cache ()
+  "Invalidate helm-imenu's buffer-local cache when helm-imenu is loaded."
+  (dolist (cache '(helm-cached-imenu-alist
+                   helm-cached-imenu-candidates
+                   helm-cached-imenu-tick))
+    (when (boundp cache)
+      (kill-local-variable cache))))
+
 (defun ast-grep--outline-invalidate-imenu-caches ()
   "Drop cached imenu indexes so a changed index source takes effect.
-imenu caches in `imenu--index-alist' and consult-imenu keeps its own
-buffer-local `consult-imenu--cache'; neither notices a swapped
+imenu caches in `imenu--index-alist'; consult-imenu and helm-imenu keep
+their own buffer-local caches.  None of them notices a swapped
 `imenu-create-index-function'."
   (when (local-variable-p 'imenu--index-alist)
     (setq-local imenu--index-alist nil))
   (when (boundp 'consult-imenu--cache)
-    (kill-local-variable 'consult-imenu--cache)))
+    (kill-local-variable 'consult-imenu--cache))
+  (ast-grep--outline-clear-helm-imenu-cache))
 
 (defvar-local ast-grep--outline-saved-imenu-function 'unset
   "Saved `imenu-create-index-function' from before `ast-grep-outline-mode'.")
@@ -228,6 +240,7 @@ untouched."
         (cache-local (and (boundp 'consult-imenu--cache)
                           (local-variable-p 'consult-imenu--cache)))
         (saved-cache (and (boundp 'consult-imenu--cache) consult-imenu--cache))
+        helm-cache-touched
         (imenu-auto-rescan t))
     (unwind-protect
         (progn
@@ -245,7 +258,10 @@ untouched."
            ;; back to built-in imenu, never consult.
            ((bound-and-true-p helm-mode)
             (if (and (require 'helm-imenu nil t) (fboundp 'helm-imenu))
-                (call-interactively #'helm-imenu)
+                (progn
+                  (setq helm-cache-touched t)
+                  (ast-grep--outline-clear-helm-imenu-cache)
+                  (call-interactively #'helm-imenu))
               (call-interactively #'imenu)))
            ((and (require 'consult-imenu nil t) (fboundp 'consult-imenu))
             ;; consult-imenu caches per `buffer-modified-tick' and ignores
@@ -261,7 +277,9 @@ untouched."
       (when (boundp 'consult-imenu--cache)
         (if cache-local
             (setq-local consult-imenu--cache saved-cache)
-          (kill-local-variable 'consult-imenu--cache))))))
+          (kill-local-variable 'consult-imenu--cache)))
+      (when helm-cache-touched
+        (ast-grep--outline-clear-helm-imenu-cache)))))
 
 (provide 'ast-grep-outline)
 
