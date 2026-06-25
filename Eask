@@ -1,4 +1,4 @@
-(package "ast-grep" "0.4.1"
+(package "ast-grep" "0.5.0"
          "Search code using ast-grep with completing-read interface")
 (website-url "https://github.com/sunskyxh/ast-grep.el")
 (keywords "tools" "matching")
@@ -15,7 +15,7 @@
 (files "ast-grep*.el")
 
 (script "compile"
-        "eask --strict compile ast-grep-core.el ast-grep-sync.el ast-grep-consult.el ast-grep-ivy.el ast-grep-helm.el ast-grep.el")
+        "eask --strict compile ast-grep-core.el ast-grep-sync.el ast-grep-consult.el ast-grep-ivy.el ast-grep-helm.el ast-grep-outline.el ast-grep.el")
 
 (script "test"
         "eask emacs -batch -L . -L tests -l tests/run-tests.el -f ast-grep-test-run-batch")

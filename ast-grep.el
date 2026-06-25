@@ -3,7 +3,7 @@
 ;; Copyright (C) 2025 SunskyXH
 
 ;; Author: SunskyXH <sunskyxh@gmail.com>
-;; Version: 0.4.1
+;; Version: 0.5.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: tools, matching
 ;; URL: https://github.com/sunskyxh/ast-grep.el
@@ -43,6 +43,7 @@
 (require 'project)
 (require 'ast-grep-core)
 (require 'ast-grep-sync)
+(require 'ast-grep-outline)
 
 (defvar ivy-mode nil)
 (defvar helm-mode nil)
