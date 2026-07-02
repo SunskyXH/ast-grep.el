@@ -21,12 +21,12 @@
                    '("ast-grep" "run" "--pattern=abc"
                      "--json=stream" "/dir")))
     ;; Helm gates `:requires-pattern' by `string-width', so the builder
-    ;; must measure the same way: "日本" is length 2 but width 4, and a
+    ;; must measure the same way: "文字" is length 2 but width 4, and a
     ;; length-based check here would error inside helm's update cycle.
-    (should (equal (ast-grep--helm-command "日本" "/dir")
-                   '("ast-grep" "run" "--pattern=日本"
+    (should (equal (ast-grep--helm-command "文字" "/dir")
+                   '("ast-grep" "run" "--pattern=文字"
                      "--json=stream" "/dir")))
-    (should-not (ast-grep--helm-command "日" "/dir"))))
+    (should-not (ast-grep--helm-command "文" "/dir"))))
 
 (ert-deftest ast-grep-helm-test-candidates-process-starts-command ()
   "The Helm adapter starts ast-grep directly with argv, not a shell string."
@@ -43,11 +43,11 @@
         captured-coding-system)
     (should (ast-grep--candidate-match candidate))
     (cl-letf (((symbol-function 'start-process)
-              (lambda (&rest args)
-                (setq captured args)
-                (setq captured-connection-type process-connection-type)
-                (setq captured-coding-system coding-system-for-read)
-                'process)))
+               (lambda (&rest args)
+                 (setq captured args)
+                 (setq captured-connection-type process-connection-type)
+                 (setq captured-coding-system coding-system-for-read)
+                 'process)))
       (let ((process-connection-type t)
             (coding-system-for-read 'iso-latin-1))
         (should (eq (ast-grep--helm-candidates-process "/dir") 'process))

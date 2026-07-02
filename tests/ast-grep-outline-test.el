@@ -148,6 +148,39 @@ installed in the current sandbox."
         (should-not (local-variable-p 'imenu-create-index-function))
         (should (eq imenu--index-alist 'sentinel))))))
 
+(ert-deftest ast-grep-outline-test-command-cleanup-pins-origin-buffer ()
+  "Cleanup restores the origin buffer even when the picker switches buffers.
+Some picker exits leave another buffer current when they return (e.g.
+helm-imenu's quit-and-find-file on \\`C-x C-f'); the unwind cleanup must
+still target the buffer whose imenu state was swapped, not whichever
+buffer the action landed in."
+  (require 'consult-imenu nil t)
+  (let ((origin (generate-new-buffer " *sg-outline-origin*"))
+        (other (generate-new-buffer " *sg-outline-other*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer origin
+            (setq buffer-file-name "x.ts")
+            (setq-local imenu--index-alist 'sentinel)
+            (let ((ivy-mode nil))
+              (cl-letf (((symbol-function 'ast-grep--executable-available-p)
+                         (lambda () t))
+                        ((symbol-function 'imenu)
+                         (lambda (&rest _) (interactive) (set-buffer other)))
+                        ((symbol-function 'consult-imenu)
+                         (lambda (&rest _) (interactive) (set-buffer other))))
+                (ast-grep-outline))))
+          ;; The origin buffer got its imenu state back...
+          (with-current-buffer origin
+            (should-not (local-variable-p 'imenu-create-index-function))
+            (should (eq imenu--index-alist 'sentinel)))
+          ;; ...and the buffer the picker landed in was left alone.
+          (with-current-buffer other
+            (should-not (local-variable-p 'imenu-create-index-function))
+            (should-not (local-variable-p 'imenu--index-alist))))
+      (kill-buffer origin)
+      (kill-buffer other))))
+
 (ert-deftest ast-grep-outline-test-real-binary-index ()
   "The real outline binary produces the expected index for sample.ts."
   (skip-unless (ast-grep-test--outline-available-p))

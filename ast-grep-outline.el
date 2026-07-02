@@ -233,7 +233,8 @@ untouched."
     (error "The ast-grep executable not found. Please install ast-grep"))
   (unless buffer-file-name
     (user-error "Current buffer is not visiting a file"))
-  (let ((saved-fn (if (local-variable-p 'imenu-create-index-function)
+  (let ((origin-buffer (current-buffer))
+        (saved-fn (if (local-variable-p 'imenu-create-index-function)
                       imenu-create-index-function
                     'unset))
         (saved-alist imenu--index-alist)
@@ -270,16 +271,21 @@ untouched."
             (setq-local consult-imenu--cache nil)
             (call-interactively #'consult-imenu))
            (t (call-interactively #'imenu))))
-      (if (eq saved-fn 'unset)
-          (kill-local-variable 'imenu-create-index-function)
-        (setq-local imenu-create-index-function saved-fn))
-      (setq imenu--index-alist saved-alist)
-      (when (boundp 'consult-imenu--cache)
-        (if cache-local
-            (setq-local consult-imenu--cache saved-cache)
-          (kill-local-variable 'consult-imenu--cache)))
-      (when helm-cache-touched
-        (ast-grep--outline-clear-helm-imenu-cache)))))
+      ;; A picker action may leave another buffer current when it returns
+      ;; (e.g. helm-imenu's quit-and-find-file on C-x C-f), so pin the
+      ;; cleanup to the buffer whose imenu state was swapped.
+      (when (buffer-live-p origin-buffer)
+        (with-current-buffer origin-buffer
+          (if (eq saved-fn 'unset)
+              (kill-local-variable 'imenu-create-index-function)
+            (setq-local imenu-create-index-function saved-fn))
+          (setq imenu--index-alist saved-alist)
+          (when (boundp 'consult-imenu--cache)
+            (if cache-local
+                (setq-local consult-imenu--cache saved-cache)
+              (kill-local-variable 'consult-imenu--cache)))
+          (when helm-cache-touched
+            (ast-grep--outline-clear-helm-imenu-cache)))))))
 
 (provide 'ast-grep-outline)
 
