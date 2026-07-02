@@ -1,4 +1,4 @@
-(package "ast-grep" "0.5.0"
+(package "ast-grep" "0.6.0"
          "Search code using ast-grep with completing-read interface")
 (website-url "https://github.com/sunskyxh/ast-grep.el")
 (keywords "tools" "matching")
