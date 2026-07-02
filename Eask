@@ -15,7 +15,7 @@
 (files "ast-grep*.el")
 
 (script "compile"
-        "eask --strict compile ast-grep-core.el ast-grep-sync.el ast-grep-consult.el ast-grep-ivy.el ast-grep-outline.el ast-grep.el")
+        "eask --strict compile ast-grep-core.el ast-grep-sync.el ast-grep-consult.el ast-grep-ivy.el ast-grep-helm.el ast-grep-outline.el ast-grep.el")
 
 (script "test"
         "eask emacs -batch -L . -L tests -l tests/run-tests.el -f ast-grep-test-run-batch")
@@ -29,5 +29,8 @@
 (script "test:ivy"
         "eask clean workspace && eask install ivy counsel && eask emacs -batch --eval '(setenv \"AST_GREP_TEST_BACKEND\" \"ivy\")' -L . -L tests -l tests/run-tests.el -f ast-grep-test-run-batch")
 
+(script "test:helm"
+        "eask clean workspace && eask install helm && eask emacs -batch --eval '(setenv \"AST_GREP_TEST_BACKEND\" \"helm\")' -L . -L tests -l tests/run-tests.el -f ast-grep-test-run-batch")
+
 (script "test:full"
-        "eask clean workspace && eask install compat consult ivy counsel && eask emacs -batch --eval '(setenv \"AST_GREP_TEST_BACKEND\" \"full\")' -L . -L tests -l tests/run-tests.el -f ast-grep-test-run-batch")
+        "eask clean workspace && eask install compat consult ivy counsel helm && eask emacs -batch --eval '(setenv \"AST_GREP_TEST_BACKEND\" \"full\")' -L . -L tests -l tests/run-tests.el -f ast-grep-test-run-batch")

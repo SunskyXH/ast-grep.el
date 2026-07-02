@@ -148,6 +148,39 @@ installed in the current sandbox."
         (should-not (local-variable-p 'imenu-create-index-function))
         (should (eq imenu--index-alist 'sentinel))))))
 
+(ert-deftest ast-grep-outline-test-command-cleanup-pins-origin-buffer ()
+  "Cleanup restores the origin buffer even when the picker switches buffers.
+Some picker exits leave another buffer current when they return (e.g.
+helm-imenu's quit-and-find-file on \\`C-x C-f'); the unwind cleanup must
+still target the buffer whose imenu state was swapped, not whichever
+buffer the action landed in."
+  (require 'consult-imenu nil t)
+  (let ((origin (generate-new-buffer " *sg-outline-origin*"))
+        (other (generate-new-buffer " *sg-outline-other*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer origin
+            (setq buffer-file-name "x.ts")
+            (setq-local imenu--index-alist 'sentinel)
+            (let ((ivy-mode nil))
+              (cl-letf (((symbol-function 'ast-grep--executable-available-p)
+                         (lambda () t))
+                        ((symbol-function 'imenu)
+                         (lambda (&rest _) (interactive) (set-buffer other)))
+                        ((symbol-function 'consult-imenu)
+                         (lambda (&rest _) (interactive) (set-buffer other))))
+                (ast-grep-outline))))
+          ;; The origin buffer got its imenu state back...
+          (with-current-buffer origin
+            (should-not (local-variable-p 'imenu-create-index-function))
+            (should (eq imenu--index-alist 'sentinel)))
+          ;; ...and the buffer the picker landed in was left alone.
+          (with-current-buffer other
+            (should-not (local-variable-p 'imenu-create-index-function))
+            (should-not (local-variable-p 'imenu--index-alist))))
+      (kill-buffer origin)
+      (kill-buffer other))))
+
 (ert-deftest ast-grep-outline-test-real-binary-index ()
   "The real outline binary produces the expected index for sample.ts."
   (skip-unless (ast-grep-test--outline-available-p))
@@ -271,13 +304,27 @@ installed in the current sandbox."
   (with-temp-buffer
     (setq buffer-file-name "x.ts")
     (setq-local imenu--index-alist '(("old" . 1)))
+    (setq-local helm-cached-imenu-alist '(("old" . 1)))
+    (setq-local helm-cached-imenu-candidates '(("old" . 1)))
+    (setq-local helm-cached-imenu-tick (buffer-modified-tick))
     (ast-grep-outline-mode 1)
     ;; Enabling drops the index built by the previous source.
     (should-not imenu--index-alist)
+    (dolist (cache '(helm-cached-imenu-alist
+                     helm-cached-imenu-candidates
+                     helm-cached-imenu-tick))
+      (should-not (local-variable-p cache)))
     (setq-local imenu--index-alist '(("ours" . 2)))
+    (setq-local helm-cached-imenu-alist '(("ours" . 2)))
+    (setq-local helm-cached-imenu-candidates '(("ours" . 2)))
+    (setq-local helm-cached-imenu-tick (buffer-modified-tick))
     (ast-grep-outline-mode -1)
     ;; Disabling drops our index so the restored source rebuilds.
-    (should-not imenu--index-alist)))
+    (should-not imenu--index-alist)
+    (dolist (cache '(helm-cached-imenu-alist
+                     helm-cached-imenu-candidates
+                     helm-cached-imenu-tick))
+      (should-not (local-variable-p cache)))))
 
 (ert-deftest ast-grep-outline-test-degrades-without-outline-support ()
   "An ast-grep without `outline' yields an empty index, never an error.
@@ -317,6 +364,91 @@ Runs in the consult sandbox, where consult is present but counsel is not."
   (with-temp-buffer
     (setq buffer-file-name "x.ts")
     (let ((ivy-mode t)
+          (called nil))
+      (cl-letf (((symbol-function 'ast-grep--executable-available-p)
+                 (lambda () t))
+                ((symbol-function 'consult-imenu)
+                 (lambda (&rest _) (interactive) (setq called 'consult)))
+                ((symbol-function 'imenu)
+                 (lambda (&rest _) (interactive) (setq called 'imenu))))
+        (ast-grep-outline)
+        (should (eq called 'imenu))))))
+
+(ert-deftest ast-grep-outline-test-command-dispatches-helm-when-helm ()
+  "With `helm-mode' active, dispatch to helm-imenu with fresh caches."
+  (skip-unless (require 'helm-imenu nil t))
+  (with-temp-buffer
+    (setq buffer-file-name "x.ts")
+    (let ((ivy-mode nil)
+          (helm-mode t)
+          (called nil)
+          tick-at-dispatch
+          candidates-at-dispatch
+          alist-at-dispatch)
+      (setq-local helm-cached-imenu-alist '(("old" . 1)))
+      (setq-local helm-cached-imenu-candidates '(("old" . 1)))
+      (setq-local helm-cached-imenu-tick (buffer-modified-tick))
+      (cl-letf (((symbol-function 'ast-grep--executable-available-p)
+                 (lambda () t))
+                ((symbol-function 'helm-imenu)
+                 (lambda (&rest _)
+                   (interactive)
+                   (setq called 'helm
+                         alist-at-dispatch helm-cached-imenu-alist
+                         candidates-at-dispatch helm-cached-imenu-candidates
+                         tick-at-dispatch helm-cached-imenu-tick)
+                   ;; Simulate helm-imenu rebuilding and writing ast-grep
+                   ;; candidates during this one-shot command.
+                   (setq-local helm-cached-imenu-alist '(("outline" . 2)))
+                   (setq-local helm-cached-imenu-candidates '(("outline" . 2)))
+                   (setq-local helm-cached-imenu-tick
+                               (buffer-modified-tick)))))
+        (ast-grep-outline)
+        (should (eq called 'helm))
+        ;; The stale native helm-imenu cache was cleared before dispatch.
+        (should-not alist-at-dispatch)
+        (should-not candidates-at-dispatch)
+        (should-not tick-at-dispatch)
+        ;; The ast-grep one-shot cache written by helm-imenu is not left
+        ;; behind for a later plain helm-imenu command.
+        (dolist (cache '(helm-cached-imenu-alist
+                         helm-cached-imenu-candidates
+                         helm-cached-imenu-tick))
+          (should-not (local-variable-p cache)))))))
+
+(ert-deftest ast-grep-outline-test-helm-candidates-rebuild-after-cache-clear ()
+  "Clearing helm-imenu's tick cache makes candidates rebuild."
+  (skip-unless (require 'helm-imenu nil t))
+  (with-temp-buffer
+    (ast-grep-outline-test--insert-source)
+    (setq buffer-file-name "x.ts")
+    (setq-local imenu-create-index-function #'ast-grep--outline-imenu-index)
+    (let ((calls 0)
+          (old-candidates '(("old" . 1))))
+      (setq-local helm-cached-imenu-tick (buffer-modified-tick))
+      (setq-local helm-cached-imenu-candidates old-candidates)
+      (cl-letf (((symbol-function 'ast-grep--run-outline)
+                 (lambda (_file)
+                   (setq calls (1+ calls))
+                   ast-grep-outline-test--stream)))
+        ;; The stale tick reproduces helm-imenu's short-circuit.
+        (should (equal (helm-imenu-candidates (current-buffer))
+                       old-candidates))
+        (should (= calls 0))
+        (ast-grep--outline-clear-helm-imenu-cache)
+        (should-not (equal (helm-imenu-candidates (current-buffer))
+                           old-candidates))
+        (should (= calls 1))))))
+
+(ert-deftest ast-grep-outline-test-command-helm-without-helm-uses-imenu ()
+  "helm-mode active but Helm missing falls to imenu, never consult.
+Runs in the consult sandbox, where consult is present but Helm is not."
+  (skip-unless (and (require 'consult-imenu nil t)
+                    (not (require 'helm-imenu nil t))))
+  (with-temp-buffer
+    (setq buffer-file-name "x.ts")
+    (let ((ivy-mode nil)
+          (helm-mode t)
           (called nil))
       (cl-letf (((symbol-function 'ast-grep--executable-available-p)
                  (lambda () t))

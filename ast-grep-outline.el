@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2025 SunskyXH
 
-;; Author: SunskyxXH <sunskyxh@gmail.com>
+;; Author: SunskyXH <sunskyxh@gmail.com>
 ;; Keywords: tools, matching
 
 ;; This file is not part of GNU Emacs.
@@ -11,9 +11,9 @@
 
 ;; Build an imenu index for the current file from `ast-grep outline'.
 ;; Once installed as `imenu-create-index-function', every imenu consumer
-;; (`imenu', `consult-imenu', `counsel-imenu', `imenu-list', ...) can jump
-;; to the symbols ast-grep extracts.  The outline runs against the file on
-;; disk, so positions are accurate for a saved buffer.
+;; (`imenu', `consult-imenu', `counsel-imenu', `helm-imenu', `imenu-list',
+;; ...) can jump to the symbols ast-grep extracts.  The outline runs against
+;; the file on disk, so positions are accurate for a saved buffer.
 
 ;;; Code:
 
@@ -23,8 +23,13 @@
 
 (declare-function consult-imenu "consult-imenu")
 (declare-function counsel-imenu "counsel")
+(declare-function helm-imenu "helm-imenu")
 (defvar consult-imenu--cache)
+(defvar helm-cached-imenu-alist)
+(defvar helm-cached-imenu-candidates)
+(defvar helm-cached-imenu-tick)
 (defvar ivy-mode)
+(defvar helm-mode)
 
 (defconst ast-grep--outline-type-titles
   '(("class" . "Classes")
@@ -160,15 +165,24 @@ rather than signalling, since this runs from `imenu-create-index-function'."
        (message "ast-grep outline failed: %s" (error-message-string err))
        nil))))
 
+(defun ast-grep--outline-clear-helm-imenu-cache ()
+  "Invalidate helm-imenu's buffer-local cache when helm-imenu is loaded."
+  (dolist (cache '(helm-cached-imenu-alist
+                   helm-cached-imenu-candidates
+                   helm-cached-imenu-tick))
+    (when (boundp cache)
+      (kill-local-variable cache))))
+
 (defun ast-grep--outline-invalidate-imenu-caches ()
   "Drop cached imenu indexes so a changed index source takes effect.
-imenu caches in `imenu--index-alist' and consult-imenu keeps its own
-buffer-local `consult-imenu--cache'; neither notices a swapped
+imenu caches in `imenu--index-alist'; consult-imenu and helm-imenu keep
+their own buffer-local caches.  None of them notices a swapped
 `imenu-create-index-function'."
   (when (local-variable-p 'imenu--index-alist)
     (setq-local imenu--index-alist nil))
   (when (boundp 'consult-imenu--cache)
-    (kill-local-variable 'consult-imenu--cache)))
+    (kill-local-variable 'consult-imenu--cache))
+  (ast-grep--outline-clear-helm-imenu-cache))
 
 (defvar-local ast-grep--outline-saved-imenu-function 'unset
   "Saved `imenu-create-index-function' from before `ast-grep-outline-mode'.")
@@ -176,9 +190,9 @@ buffer-local `consult-imenu--cache'; neither notices a swapped
 ;;;###autoload
 (define-minor-mode ast-grep-outline-mode
   "Use `ast-grep outline' as this buffer's imenu index source.
-While enabled, `imenu', `consult-imenu', `counsel-imenu' and other imenu
-consumers list the symbols ast-grep extracts from the file on disk.  Save
-the buffer to keep positions accurate."
+While enabled, `imenu', `consult-imenu', `counsel-imenu', `helm-imenu'
+and other imenu consumers list the symbols ast-grep extracts from the
+file on disk.  Save the buffer to keep positions accurate."
   :lighter " sg-outline"
   (if ast-grep-outline-mode
       (progn
@@ -208,22 +222,26 @@ the buffer to keep positions accurate."
   "Jump to a symbol in the current file via `ast-grep outline'.
 Pick the picker the way `ast-grep-search' picks a backend: when `ivy-mode'
 is active use `counsel-imenu' (or the built-in `imenu' if counsel is
-unavailable, never `consult-imenu'); otherwise use `consult-imenu' when
-available, else `imenu'.  This is a one-shot entry point: it does not
-require `ast-grep-outline-mode' and leaves the buffer's own imenu
-configuration untouched."
+unavailable, never `consult-imenu'); when `helm-mode' is active use
+`helm-imenu' (or the built-in `imenu' if Helm is unavailable, never
+`consult-imenu'); otherwise use `consult-imenu' when available, else
+`imenu'.  This is a one-shot entry point: it does not require
+`ast-grep-outline-mode' and leaves the buffer's own imenu configuration
+untouched."
   (interactive)
   (unless (ast-grep--executable-available-p)
     (error "The ast-grep executable not found. Please install ast-grep"))
   (unless buffer-file-name
     (user-error "Current buffer is not visiting a file"))
-  (let ((saved-fn (if (local-variable-p 'imenu-create-index-function)
+  (let ((origin-buffer (current-buffer))
+        (saved-fn (if (local-variable-p 'imenu-create-index-function)
                       imenu-create-index-function
                     'unset))
         (saved-alist imenu--index-alist)
         (cache-local (and (boundp 'consult-imenu--cache)
                           (local-variable-p 'consult-imenu--cache)))
         (saved-cache (and (boundp 'consult-imenu--cache) consult-imenu--cache))
+        helm-cache-touched
         (imenu-auto-rescan t))
     (unwind-protect
         (progn
@@ -231,12 +249,20 @@ configuration untouched."
                       #'ast-grep--outline-imenu-index)
           (setq imenu--index-alist nil)
           (cond
-           ;; Mirror `ast-grep--select-backend': under ivy-mode use
-           ;; counsel-imenu, else the built-in imenu (ivy drives it) --- never
-           ;; consult.  Both read the same `imenu--index-alist'.
+           ;; Mirror `ast-grep--select-backend': active UI modes own their
+           ;; imenu picker and never fall through to consult.
            ((bound-and-true-p ivy-mode)
             (if (and (require 'counsel nil t) (fboundp 'counsel-imenu))
                 (call-interactively #'counsel-imenu)
+              (call-interactively #'imenu)))
+           ;; Under helm-mode, use helm-imenu if available; otherwise fall
+           ;; back to built-in imenu, never consult.
+           ((bound-and-true-p helm-mode)
+            (if (and (require 'helm-imenu nil t) (fboundp 'helm-imenu))
+                (progn
+                  (setq helm-cache-touched t)
+                  (ast-grep--outline-clear-helm-imenu-cache)
+                  (call-interactively #'helm-imenu))
               (call-interactively #'imenu)))
            ((and (require 'consult-imenu nil t) (fboundp 'consult-imenu))
             ;; consult-imenu caches per `buffer-modified-tick' and ignores
@@ -245,14 +271,21 @@ configuration untouched."
             (setq-local consult-imenu--cache nil)
             (call-interactively #'consult-imenu))
            (t (call-interactively #'imenu))))
-      (if (eq saved-fn 'unset)
-          (kill-local-variable 'imenu-create-index-function)
-        (setq-local imenu-create-index-function saved-fn))
-      (setq imenu--index-alist saved-alist)
-      (when (boundp 'consult-imenu--cache)
-        (if cache-local
-            (setq-local consult-imenu--cache saved-cache)
-          (kill-local-variable 'consult-imenu--cache))))))
+      ;; A picker action may leave another buffer current when it returns
+      ;; (e.g. helm-imenu's quit-and-find-file on C-x C-f), so pin the
+      ;; cleanup to the buffer whose imenu state was swapped.
+      (when (buffer-live-p origin-buffer)
+        (with-current-buffer origin-buffer
+          (if (eq saved-fn 'unset)
+              (kill-local-variable 'imenu-create-index-function)
+            (setq-local imenu-create-index-function saved-fn))
+          (setq imenu--index-alist saved-alist)
+          (when (boundp 'consult-imenu--cache)
+            (if cache-local
+                (setq-local consult-imenu--cache saved-cache)
+              (kill-local-variable 'consult-imenu--cache)))
+          (when helm-cache-touched
+            (ast-grep--outline-clear-helm-imenu-cache)))))))
 
 (provide 'ast-grep-outline)
 
