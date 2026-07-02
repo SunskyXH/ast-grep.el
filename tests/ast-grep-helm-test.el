@@ -110,7 +110,9 @@
                     #'ast-grep--helm-filter-one-by-one))
         (should (eq (plist-get slots :action) #'ast-grep--helm-action))
         (should (eq (plist-get slots :persistent-action)
-                    #'ast-grep--helm-action))
+                    #'ast-grep--helm-preview))
+        (should (eq (plist-get slots :cleanup) #'ast-grep--helm-cleanup))
+        (should (eql (plist-get slots :follow) 1))
         (should (eq (plist-get slots :requires-pattern)
                     ast-grep-async-min-input))))))
 
@@ -121,7 +123,42 @@
     (should (equal (assoc-default 'name source) "ast-grep"))
     (should (eq (assoc-default 'requires-pattern source)
                 ast-grep-async-min-input))
+    (should (eql (assoc-default 'follow source) 1))
     (should (functionp (assoc-default 'candidates-process source)))))
+
+(ert-deftest ast-grep-helm-test-preview-cleans-up-preview-buffers ()
+  "Preview-opened buffers die with the session; pre-existing ones survive.
+Mirrors the consult backend's preview semantics: previewing must not
+leave stray buffers behind, but a buffer the user already had open is
+never killed."
+  (skip-unless (not (find-buffer-visiting ast-grep-test--sample-file)))
+  (let ((selection (ast-grep--format-candidate
+                    (list :file ast-grep-test--sample-file
+                          :start-line 4
+                          :start-column 2
+                          :text "console.log(name)")))
+        (ast-grep--helm-preview-buffers nil))
+    (cl-letf (((symbol-function 'pulse-momentary-highlight-one-line)
+               (lambda (&rest _))))
+      (unwind-protect
+          (progn
+            ;; Not previously visited: preview records the buffer...
+            (ast-grep--helm-preview selection)
+            (should (= (length ast-grep--helm-preview-buffers) 1))
+            (should (buffer-live-p (car ast-grep--helm-preview-buffers)))
+            (should (equal (buffer-file-name) ast-grep-test--sample-file))
+            ;; ...and cleanup kills it and empties the registry.
+            (ast-grep--helm-cleanup)
+            (should-not ast-grep--helm-preview-buffers)
+            (should-not (find-buffer-visiting ast-grep-test--sample-file))
+            ;; Already visited: preview records nothing, cleanup keeps it.
+            (let ((existing (find-file-noselect ast-grep-test--sample-file)))
+              (ast-grep--helm-preview selection)
+              (should-not ast-grep--helm-preview-buffers)
+              (ast-grep--helm-cleanup)
+              (should (buffer-live-p existing))))
+        (when-let ((buf (find-buffer-visiting ast-grep-test--sample-file)))
+          (kill-buffer buf))))))
 
 (ert-deftest ast-grep-helm-test-search-wires-helm-call ()
   "`ast-grep--search-helm' creates the source and starts Helm."

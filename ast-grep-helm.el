@@ -66,13 +66,40 @@ INPUT is measured with `string-width', not `length', because Helm gates
     (ast-grep--helm-display-candidate candidate)))
 
 (defun ast-grep--helm-action (candidate)
-  "Preview or visit CANDIDATE for the Helm backend."
+  "Visit CANDIDATE for the Helm backend."
   (when (ast-grep--candidate-match candidate)
     (ast-grep--goto-match candidate)
     (pulse-momentary-highlight-one-line (point))))
 
+(defvar ast-grep--helm-preview-buffers nil
+  "Buffers opened only to preview candidates in the current Helm session.")
+
+(defun ast-grep--helm-preview (candidate)
+  "Preview CANDIDATE for the Helm backend.
+A buffer this opens is recorded in `ast-grep--helm-preview-buffers' so
+`ast-grep--helm-cleanup' can kill it when the session ends; buffers
+that were already live are left alone.  Selecting a candidate goes
+through `ast-grep--helm-action' instead, which visits for good."
+  (when-let* ((match (ast-grep--candidate-match candidate))
+              (file (plist-get match :file)))
+    (unless (find-buffer-visiting file)
+      (push (find-file-noselect file) ast-grep--helm-preview-buffers))
+    (ast-grep--goto-match candidate)
+    (pulse-momentary-highlight-one-line (point))))
+
+(defun ast-grep--helm-cleanup ()
+  "Kill unmodified buffers opened only for preview during the Helm session."
+  (dolist (buffer ast-grep--helm-preview-buffers)
+    (when (and (buffer-live-p buffer)
+               (not (buffer-modified-p buffer)))
+      (kill-buffer buffer)))
+  (setq ast-grep--helm-preview-buffers nil))
+
 (defun ast-grep--helm-source (directory)
-  "Create a Helm async source for DIRECTORY."
+  "Create a Helm async source for DIRECTORY.
+The source enables `helm-follow-mode' (`:follow' 1), so moving between
+candidates previews them live; the cleanup hook kills buffers that were
+opened purely for preview once the session ends."
   (ast-grep--helm-ensure-function 'helm-make-source)
   (helm-make-source
    "ast-grep" 'helm-source-async
@@ -80,8 +107,10 @@ INPUT is measured with `string-width', not `length', because Helm gates
                          (ast-grep--helm-candidates-process directory))
    :filter-one-by-one #'ast-grep--helm-filter-one-by-one
    :action #'ast-grep--helm-action
-   :persistent-action #'ast-grep--helm-action
+   :persistent-action #'ast-grep--helm-preview
    :persistent-help "Preview match"
+   :cleanup #'ast-grep--helm-cleanup
+   :follow 1
    :requires-pattern ast-grep-async-min-input
    :nohighlight t
    :nomark t))
@@ -89,7 +118,10 @@ INPUT is measured with `string-width', not `length', because Helm gates
 (defun ast-grep--search-helm (directory)
   "Search asynchronously using Helm in DIRECTORY.
 The ast-grep pattern is typed in the Helm minibuffer.  Results stream
-in as you type after `ast-grep-async-min-input' characters."
+in as you type after `ast-grep-async-min-input' characters, and the
+selected candidate is previewed live (helm-follow-mode; toggle with
+\\`C-c C-f').  Preview-only buffers are cleaned up when the session
+ends."
   (ast-grep--helm-ensure-function 'helm)
   (ast-grep--reset-candidate-table)
   (helm :sources (ast-grep--helm-source directory)
