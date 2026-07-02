@@ -12,14 +12,21 @@
 (require 'ast-grep-helm)
 
 (ert-deftest ast-grep-helm-test-command-respects-min-input ()
-  "Builder returns nil when input is shorter than `ast-grep-async-min-input'."
+  "Builder returns nil when input is narrower than `ast-grep-async-min-input'."
   (let ((ast-grep-async-min-input 3)
         (ast-grep-executable "ast-grep"))
     (should-not (ast-grep--helm-command "" "/dir"))
     (should-not (ast-grep--helm-command "ab" "/dir"))
     (should (equal (ast-grep--helm-command "abc" "/dir")
                    '("ast-grep" "run" "--pattern=abc"
-                     "--json=stream" "/dir")))))
+                     "--json=stream" "/dir")))
+    ;; Helm gates `:requires-pattern' by `string-width', so the builder
+    ;; must measure the same way: "日本" is length 2 but width 4, and a
+    ;; length-based check here would error inside helm's update cycle.
+    (should (equal (ast-grep--helm-command "日本" "/dir")
+                   '("ast-grep" "run" "--pattern=日本"
+                     "--json=stream" "/dir")))
+    (should-not (ast-grep--helm-command "日" "/dir"))))
 
 (ert-deftest ast-grep-helm-test-candidates-process-starts-command ()
   "The Helm adapter starts ast-grep directly with argv, not a shell string."

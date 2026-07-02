@@ -37,8 +37,12 @@
        (fboundp 'helm-make-source)))
 
 (defun ast-grep--helm-command (input directory)
-  "Build ast-grep command for INPUT in DIRECTORY, or nil if INPUT is too short."
-  (when (and input (>= (length input) ast-grep-async-min-input))
+  "Build ast-grep command for INPUT in DIRECTORY, or nil if INPUT is too short.
+INPUT is measured with `string-width', not `length', because Helm gates
+`:requires-pattern' by width; the two checks must agree or a wide-char
+\(e.g. CJK) pattern passes Helm's gate, reaches
+`ast-grep--helm-candidates-process', and errors instead of searching."
+  (when (and input (>= (string-width input) ast-grep-async-min-input))
     (ast-grep--build-command input directory)))
 
 (defun ast-grep--helm-candidates-process (directory)
