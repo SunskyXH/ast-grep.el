@@ -125,6 +125,22 @@
                (lambda () t)))
       (should-error (ast-grep-outline) :type 'user-error))))
 
+(ert-deftest ast-grep-outline-test-command-errors-without-outline-support ()
+  "The one-shot command reports outline failures instead of an empty picker.
+The index builder degrades failures to an empty index for imenu
+consumers, so without an up-front probe an old binary would surface as
+\"no symbols in this file\" rather than the real error."
+  (with-temp-buffer
+    (setq buffer-file-name "x.ts")
+    (cl-letf (((symbol-function 'ast-grep--executable-available-p)
+               (lambda () t))
+              ((symbol-function 'ast-grep--run-outline)
+               (lambda (_file)
+                 (error "exit code 2: unrecognized subcommand 'outline'"))))
+      (let ((err (should-error (ast-grep-outline) :type 'user-error)))
+        (should (string-match-p "0\\.44\\.0" (cadr err)))
+        (should (string-match-p "unrecognized subcommand" (cadr err)))))))
+
 (ert-deftest ast-grep-outline-test-command-dispatches-picker ()
   "`ast-grep-outline' dispatches to a picker and restores imenu state.
 Both pickers are stubbed so the test is agnostic to whether consult is
@@ -138,6 +154,8 @@ installed in the current sandbox."
     (let ((called nil) (ivy-mode nil))
       (cl-letf (((symbol-function 'ast-grep--executable-available-p)
                  (lambda () t))
+                ((symbol-function 'ast-grep--run-outline)
+                 (lambda (_file) ""))
                 ((symbol-function 'imenu)
                  (lambda (&rest _) (interactive) (setq called 'imenu)))
                 ((symbol-function 'consult-imenu)
@@ -165,6 +183,8 @@ buffer the action landed in."
             (let ((ivy-mode nil))
               (cl-letf (((symbol-function 'ast-grep--executable-available-p)
                          (lambda () t))
+                        ((symbol-function 'ast-grep--run-outline)
+                         (lambda (_file) ""))
                         ((symbol-function 'imenu)
                          (lambda (&rest _) (interactive) (set-buffer other)))
                         ((symbol-function 'consult-imenu)
@@ -289,6 +309,8 @@ buffer the action landed in."
       (setq-local consult-imenu--cache stale)
       (cl-letf (((symbol-function 'ast-grep--executable-available-p)
                  (lambda () t))
+                ((symbol-function 'ast-grep--run-outline)
+                 (lambda (_file) ""))
                 ((symbol-function 'consult-imenu)
                  (lambda (&rest _)
                    (interactive)
@@ -351,6 +373,8 @@ binary predates 0.44.0 or is missing entirely."
           (called nil))
       (cl-letf (((symbol-function 'ast-grep--executable-available-p)
                  (lambda () t))
+                ((symbol-function 'ast-grep--run-outline)
+                 (lambda (_file) ""))
                 ((symbol-function 'counsel-imenu)
                  (lambda (&rest _) (interactive) (setq called 'counsel))))
         (ast-grep-outline)
@@ -367,6 +391,8 @@ Runs in the consult sandbox, where consult is present but counsel is not."
           (called nil))
       (cl-letf (((symbol-function 'ast-grep--executable-available-p)
                  (lambda () t))
+                ((symbol-function 'ast-grep--run-outline)
+                 (lambda (_file) ""))
                 ((symbol-function 'consult-imenu)
                  (lambda (&rest _) (interactive) (setq called 'consult)))
                 ((symbol-function 'imenu)
@@ -390,6 +416,8 @@ Runs in the consult sandbox, where consult is present but counsel is not."
       (setq-local helm-cached-imenu-tick (buffer-modified-tick))
       (cl-letf (((symbol-function 'ast-grep--executable-available-p)
                  (lambda () t))
+                ((symbol-function 'ast-grep--run-outline)
+                 (lambda (_file) ""))
                 ((symbol-function 'helm-imenu)
                  (lambda (&rest _)
                    (interactive)
@@ -452,6 +480,8 @@ Runs in the consult sandbox, where consult is present but Helm is not."
           (called nil))
       (cl-letf (((symbol-function 'ast-grep--executable-available-p)
                  (lambda () t))
+                ((symbol-function 'ast-grep--run-outline)
+                 (lambda (_file) ""))
                 ((symbol-function 'consult-imenu)
                  (lambda (&rest _) (interactive) (setq called 'consult)))
                 ((symbol-function 'imenu)

@@ -233,6 +233,14 @@ untouched."
     (error "The ast-grep executable not found. Please install ast-grep"))
   (unless buffer-file-name
     (user-error "Current buffer is not visiting a file"))
+  ;; Probe outline support up front: the index builder degrades every
+  ;; failure to an empty index, which a picker would present as a file
+  ;; with no symbols instead of surfacing the real error.
+  (condition-case err
+      (ast-grep--run-outline buffer-file-name)
+    (error
+     (user-error "ast-grep outline failed (requires ast-grep >= 0.44.0): %s"
+                 (error-message-string err))))
   (let ((origin-buffer (current-buffer))
         (saved-fn (if (local-variable-p 'imenu-create-index-function)
                       imenu-create-index-function
