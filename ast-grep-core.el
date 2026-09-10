@@ -247,7 +247,10 @@ intentional: ast-grep reports character indices, while
 `move-to-column' uses visual columns that change with tabs and
 double-width characters."
   (goto-char (point-min))
-  (forward-line line)
+  (unless (and (natnump line) (natnump column)
+               (zerop (forward-line line))
+               (<= column (- (line-end-position) (point))))
+    (signal 'args-out-of-range (list line column)))
   (forward-char column))
 
 (defun ast-grep--parse-stream-line (line)
@@ -294,19 +297,22 @@ Return a list of match plists as produced by
                       (split-string output "\n" t)))))
 
 (defun ast-grep--match-region (match)
-  "Compute (BEG . END) buffer positions in current buffer for MATCH.
-Uses `forward-char' rather than `move-to-column' because ast-grep
-reports character-index columns, while `move-to-column' uses visual
-columns that change with `tab-width' and double-width characters."
-  (save-excursion
-    (goto-char (point-min))
-    (forward-line (plist-get match :start-line))
-    (forward-char (plist-get match :start-column))
-    (let ((beg (point)))
-      (goto-char (point-min))
-      (forward-line (plist-get match :end-line))
-      (forward-char (plist-get match :end-column))
-      (cons beg (point)))))
+  "Return (BEG . END) for MATCH, or nil if its range or text is stale.
+The current buffer must be widened to use whole-file coordinates."
+  (condition-case nil
+      (save-excursion
+        (ast-grep--goto-line-column
+         (plist-get match :start-line) (plist-get match :start-column))
+        (let ((beg (point))
+              (text (plist-get match :text)))
+          (ast-grep--goto-line-column
+           (plist-get match :end-line) (plist-get match :end-column))
+          (when (and (stringp text) (<= beg (point)))
+            (when (eq (coding-system-eol-type buffer-file-coding-system) 1)
+              (setq text (replace-regexp-in-string "\r\n" "\n" text t t)))
+            (when (equal text (buffer-substring-no-properties beg (point)))
+              (cons beg (point))))))
+    (args-out-of-range nil)))
 
 (defun ast-grep--rewrite-sort (matches)
   "Return MATCHES sorted by file ascending, position descending.
@@ -327,6 +333,9 @@ the offsets of earlier matches in the same file."
   "Walk MATCHES interactively, applying replacements after confirmation.
 The prompt accepts y (yes), n (skip), ! (apply this and all
 remaining), q (quit), following `query-replace' conventions.
+Stale or invalid matches are skipped, including enclosing matches
+invalidated by an earlier replacement.  Buffer narrowing is restored
+after each match.
 Modified buffers are left for the user to save with
 `save-some-buffers' (\\[save-some-buffers]), matching
 `project-query-replace-regexp' behaviour."
@@ -341,38 +350,50 @@ Modified buffers are left for the user to save with
                (buf (or (find-buffer-visiting file)
                         (find-file-noselect file))))
           (with-current-buffer buf
-            (let* ((region (ast-grep--match-region m))
-                   (beg (car region))
-                   (end (cdr region))
-                   (overlay (make-overlay beg end)))
-              (overlay-put overlay 'face 'query-replace)
-              (overlay-put overlay 'priority 1001)
-              (unwind-protect
-                  (progn
-                    (pop-to-buffer buf)
-                    (goto-char beg)
-                    (let ((choice
-                           (if all
-                               ?y
-                             (condition-case nil
-                                 (read-char-choice
-                                  (format "Replace `%s' with `%s'? (y/n/!/q) "
-                                          (plist-get m :text)
-                                          (plist-get m :replacement))
-                                  '(?y ?n ?! ?q))
-                               (quit ?q)))))
-                      (pcase choice
-                        ((or ?y ?!)
-                         (when (eq choice ?!) (setq all t))
-                         (goto-char beg)
-                         (delete-region beg end)
-                         (insert (plist-get m :replacement))
-                         (unless (memq buf modified-buffers)
-                           (push buf modified-buffers))
-                         (setq replaced (1+ replaced)))
-                        (?n (setq skipped (1+ skipped)))
-                        (?q (setq quit t)))))
-                (delete-overlay overlay)))))))
+            (save-restriction
+              (widen)
+              (let* ((replacement (plist-get m :replacement))
+                     (region (and (stringp replacement)
+                                  (ast-grep--match-region m))))
+                (if (null region)
+                    (setq skipped (1+ skipped))
+                  (let* ((beg (car region))
+                         (end (cdr region))
+                         (tick (buffer-chars-modified-tick))
+                         (overlay (make-overlay beg end)))
+                    (when (eq (coding-system-eol-type buffer-file-coding-system) 1)
+                      (setq replacement
+                            (replace-regexp-in-string "\r\n" "\n" replacement t t)))
+                    (overlay-put overlay 'face 'query-replace)
+                    (overlay-put overlay 'priority 1001)
+                    (unwind-protect
+                        (progn
+                          (pop-to-buffer buf)
+                          (goto-char beg)
+                          (let ((choice
+                                 (if all
+                                     ?y
+                                   (condition-case nil
+                                       (read-char-choice
+                                        (format "Replace `%s' with `%s'? (y/n/!/q) "
+                                                (plist-get m :text) replacement)
+                                        '(?y ?n ?! ?q))
+                                     (quit ?q)))))
+                            (pcase choice
+                              ((or ?y ?!)
+                               (when (eq choice ?!) (setq all t))
+                               (if (/= tick (buffer-chars-modified-tick))
+                                   (setq skipped (1+ skipped))
+                                 (atomic-change-group
+                                   (goto-char beg)
+                                   (delete-region beg end)
+                                   (insert replacement))
+                                 (unless (memq buf modified-buffers)
+                                   (push buf modified-buffers))
+                                 (setq replaced (1+ replaced))))
+                              (?n (setq skipped (1+ skipped)))
+                              (?q (setq quit t)))))
+                      (delete-overlay overlay))))))))))
     (message
      "%s"
      (substitute-command-keys

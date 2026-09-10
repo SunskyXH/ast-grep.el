@@ -262,6 +262,116 @@ The file on disk stays untouched; the user is expected to save."
                                       (buffer-string))))))
       (when (and buf (buffer-live-p buf)) (kill-buffer buf))
       (delete-directory tmp-dir t))))
+
+(ert-deftest ast-grep-entry-test-rewrite-skips-stale-matches ()
+  "Stale or invalid ranges are skipped, including changed nested matches."
+  (skip-unless (ast-grep-test--ast-grep-available-p))
+  (dolist (case '((prefix "foo(x);\n" "prefix\nfoo(x);\n"
+                         "foo($A)" "bar($A)" "prefix\nfoo(x);\n" 0 1 0)
+                  (shortened "foo(x);\n" "x"
+                             "foo($A)" "bar($A)" "x" 0 1 0)
+                  (column-overflow "       foo(x);\n" "a\nb\nc\n foo(x);\n"
+                                   "foo($A)" "bar($A)" "a\nb\nc\n foo(x);\n" 0 1 0)
+                  (nested-shorter "f(g(x)); // tail\n" "f(g(x)); // tail\n"
+                                  "$F($$$A)" "X" "f(X); // tail\n" 1 1 1)
+                  (nested-same-length "f(g(x)); // tail\n" "f(g(x)); // tail\n"
+                                      "$F($$$A)" "h(x)" "f(h(x)); // tail\n" 1 1 1)
+                  (continue-all "a(x);\nf(g(x)); // tail\n"
+                                "a(x);\nf(g(x)); // tail\n"
+                                "$F($$$A)" "X" "X;\nf(X); // tail\n" 2 1 1)
+                  (prompt-edit "foo(x);\n" "foo(x);\n"
+                               "foo($A)" "bar($A)" "prefix\nfoo(x);\n" 0 1 1)
+                  (crlf "function f() {\r\n  foo();\r\n  bar();\r\n}\r\n"
+                        "function f() {\n  foo();\n  bar();\n}\n"
+                        "function $F() { $$$B }" "function $F() {\n  $$$B\n}"
+                        "function f() {\n  foo();\n  bar();\n}\n" 1 0 1)))
+    (pcase-let* ((`(,name ,disk ,current ,pattern ,replacement ,expected
+                         ,replaced ,skipped ,expected-prompts) case)
+                 (tmp-dir (make-temp-file "ast-grep-stale-" t))
+                 (tmp-file (expand-file-name "sample.js" tmp-dir))
+                 (prompts 0)
+                 (summary nil)
+                 (buf nil))
+      (ert-info ((format "Rewrite case: %s" name))
+        (unwind-protect
+            (progn
+              (let ((coding-system-for-write 'utf-8-unix))
+                (write-region disk nil tmp-file nil 'silent))
+              (setq buf (find-file-noselect tmp-file))
+              (with-current-buffer buf
+                (erase-buffer)
+                (insert current))
+              (cl-letf (((symbol-function 'read-string)
+                         (lambda (prompt &rest _)
+                           (if (string-prefix-p "ast-grep pattern" prompt)
+                               pattern replacement)))
+                        ((symbol-function 'read-char-choice)
+                         (lambda (&rest _)
+                           (cl-incf prompts)
+                           (when (eq name 'prompt-edit)
+                             (goto-char (point-min))
+                             (insert "prefix\n"))
+                           ?!))
+                        ((symbol-function 'pop-to-buffer)
+                         (lambda (buffer &rest _) buffer))
+                        ((symbol-function 'message)
+                         (lambda (format-string &rest args)
+                           (setq summary (apply #'format format-string args)))))
+                (ast-grep-rewrite tmp-dir))
+              (with-current-buffer buf
+                (should (equal (buffer-string) expected)))
+              (should (= prompts expected-prompts))
+              (should (string-prefix-p
+                       (format "Replaced %d match(es) in %d file(s); skipped %d"
+                               replaced (min replaced 1) skipped)
+                       summary))
+              (with-temp-buffer
+                (insert-file-contents-literally tmp-file)
+                (should (equal (buffer-string) disk))))
+          (when (buffer-live-p buf)
+            (with-current-buffer buf (set-buffer-modified-p nil))
+            (kill-buffer buf))
+          (delete-directory tmp-dir t))))))
+
+(ert-deftest ast-grep-entry-test-rewrite-preserves-narrowing ()
+  "Rewrite uses whole-file coordinates and restores an existing restriction."
+  (skip-unless (ast-grep-test--ast-grep-available-p))
+  (let* ((tmp-dir (make-temp-file "ast-grep-narrowed-" t))
+         (tmp-file (expand-file-name "sample.js" tmp-dir))
+         (disk "foo(x);\nkeep_y;\n")
+         buf)
+    (unwind-protect
+        (progn
+          (write-region disk nil tmp-file nil 'silent)
+          (setq buf (find-file-noselect tmp-file))
+          (with-current-buffer buf
+            (goto-char (point-min))
+            (forward-line 1)
+            (narrow-to-region (point) (point-max)))
+          (cl-letf (((symbol-function 'read-string)
+                     (lambda (prompt &rest _)
+                       (if (string-prefix-p "ast-grep pattern" prompt)
+                           "foo($A)" "logger.info($A)")))
+                    ((symbol-function 'read-char-choice)
+                     (lambda (&rest _) ?!))
+                    ((symbol-function 'pop-to-buffer)
+                     (lambda (buffer &rest _) buffer)))
+            (ast-grep-rewrite tmp-dir))
+          (with-current-buffer buf
+            (should (buffer-narrowed-p))
+            (should (equal (buffer-string) "keep_y;\n"))
+            (should (= (point-min) (1+ (length "logger.info(x);\n"))))
+            (save-restriction
+              (widen)
+              (should (equal (buffer-string) "logger.info(x);\nkeep_y;\n"))))
+          (with-temp-buffer
+            (insert-file-contents tmp-file)
+            (should (equal (buffer-string) disk))))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf (set-buffer-modified-p nil))
+        (kill-buffer buf))
+      (delete-directory tmp-dir t))))
+
 (provide 'ast-grep-entry-test)
 
 ;;; ast-grep-entry-test.el ends here
