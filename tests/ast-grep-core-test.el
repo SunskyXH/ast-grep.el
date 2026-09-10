@@ -188,7 +188,7 @@ A tab at the start of the line would offset `move-to-column' but
   (with-temp-buffer
     (insert "\tconsole.log(x);\n")
     (let* ((match (list :start-line 0 :start-column 1
-                        :end-line 0 :end-column 15))
+                        :end-line 0 :end-column 15 :text "console.log(x)"))
            (region (ast-grep--match-region match)))
       ;; start-column 1 must land just after the tab (position 2 in
       ;; 1-indexed buffer coords), not in the middle of the tab's
